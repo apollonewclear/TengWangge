@@ -8,10 +8,12 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QThread>
 
 using namespace tw;
 
@@ -27,6 +29,8 @@ private slots:
 
     void dataPathsStayInsideTheirRoot();
     void dataPathsRejectSystemRoots();
+    void dataPathsRejectSymlinkToSystemRoot();
+    void dataPathsEnforcePrivatePermissions();
     void dataPathsRelativeRootBecomesAbsolute();
     void standardPathsHonourOverrideVariable();
     void standardPathsDefaultIsIsolated();
@@ -50,6 +54,7 @@ private slots:
 
     void toolServicesTagEverythingWithTheirTool();
     void toolServicesDataDirsAreIsolated();
+    void toolServicesCrossThreadCallsAreSafe();
     void toolServicesAfterPlatformIsGoneAreNoOps();
 };
 
@@ -137,6 +142,48 @@ void CoreTests::dataPathsRejectSystemRoots()
     QVERIFY(DataPaths::rootProblem(QStringLiteral("/home/someone/.local/share/TengWangge")).isEmpty());
     QVERIFY(DataPaths::rootProblem(QStringLiteral("/tmp/tw")).isEmpty());
     QVERIFY(DataPaths::rootProblem(QStringLiteral("/usrlocal/x")).isEmpty());
+}
+
+void CoreTests::dataPathsRejectSymlinkToSystemRoot()
+{
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const QString linkPath = temp.filePath(QStringLiteral("etc-link"));
+    QVERIFY(QFile::link(QStringLiteral("/etc"), linkPath));
+
+    QVERIFY(!DataPaths::rootProblem(linkPath).isEmpty());
+    QVERIFY(!DataPaths::rootProblem(linkPath + QStringLiteral("/nested/data")).isEmpty());
+
+    QString error;
+    QVERIFY(DataPaths(linkPath + QStringLiteral("/nested")).toolDataDir(QStringLiteral("welcome"), &error).isEmpty());
+    QVERIFY(!error.isEmpty());
+}
+
+void CoreTests::dataPathsEnforcePrivatePermissions()
+{
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const QString root = temp.filePath(QStringLiteral("preexisting"));
+    QVERIFY(QDir().mkpath(root));
+    QFile::setPermissions(root, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner
+                                    | QFileDevice::ReadGroup | QFileDevice::ExeGroup
+                                    | QFileDevice::ReadOther | QFileDevice::ExeOther);
+
+    const DataPaths paths(root);
+    QString error;
+    const QString toolDir = paths.toolDataDir(QStringLiteral("welcome"), &error);
+    QVERIFY2(!toolDir.isEmpty(), qPrintable(error));
+    const QString logDir = paths.ensureLogDir(&error);
+    QVERIFY2(!logDir.isEmpty(), qPrintable(error));
+
+    constexpr QFileDevice::Permissions forbidden =
+        QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ExeGroup
+        | QFileDevice::ReadOther | QFileDevice::WriteOther | QFileDevice::ExeOther;
+
+    for (const QString &dir : {paths.root(), paths.root() + QStringLiteral("/tools"), toolDir, logDir}) {
+        const QFileDevice::Permissions perms = QFileInfo(dir).permissions();
+        QVERIFY2((perms & forbidden) == 0, qPrintable(dir));
+    }
 }
 
 void CoreTests::dataPathsRelativeRootBecomesAbsolute()
@@ -440,6 +487,35 @@ void CoreTests::toolServicesDataDirsAreIsolated()
     error.clear();
     QVERIFY(platform.servicesFor(QString()).dataDir(&error).isEmpty());
     QVERIFY(!error.isEmpty());
+}
+
+void CoreTests::toolServicesCrossThreadCallsAreSafe()
+{
+    class Worker final : public QThread
+    {
+    public:
+        explicit Worker(const ToolServices &s)
+            : services(s)
+        {
+        }
+        void run() override
+        {
+            services.logInfo(QStringLiteral("from-worker"));
+            services.showStatus(StatusState::Busy, QStringLiteral("worker-busy"), 0);
+        }
+        ToolServices services;
+    };
+
+    QTemporaryDir temp;
+    PlatformServices platform((DataPaths(temp.path())));
+    Worker worker(platform.servicesFor(QStringLiteral("bg")));
+    worker.start();
+    QVERIFY(worker.wait(3000));
+
+    QTRY_COMPARE_WITH_TIMEOUT(platform.log()->entries(QStringLiteral("bg")).size(), 1, 2000);
+    QCOMPARE(platform.log()->entries(QStringLiteral("bg")).first().message, QStringLiteral("from-worker"));
+    QTRY_COMPARE_WITH_TIMEOUT(platform.status()->current(QStringLiteral("bg")).state, StatusState::Busy, 2000);
+    QCOMPARE(platform.status()->current(QStringLiteral("bg")).text, QStringLiteral("worker-busy"));
 }
 
 void CoreTests::toolServicesAfterPlatformIsGoneAreNoOps()

@@ -49,6 +49,7 @@ private:
     NavigationLock m_lock;
     QTimer *m_timer = nullptr;
     QLabel *m_state = nullptr;
+    QLabel *m_percent = nullptr;
     QProgressBar *m_bar = nullptr;
     QPushButton *m_start = nullptr;
     QPushButton *m_cancel = nullptr;

@@ -33,6 +33,7 @@ add_subdirectory(src/tools)
 add_subdirectory(src/app)
 
 install(FILES packaging/TengWangge.desktop DESTINATION share/applications)
+install(FILES packaging/tengwangge.svg DESTINATION share/icons/hicolor/scalable/apps)
 
 if(TENGWANGGE_BUILD_TESTS)
     enable_testing()

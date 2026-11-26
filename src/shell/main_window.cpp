@@ -1,6 +1,7 @@
 #include "shell/main_window.h"
 
 #include "core/app_info.h"
+#include "shell/icon_factory.h"
 #include "shell/log_panel.h"
 #include "shell/status_strip.h"
 #include "shell/theme.h"
@@ -14,18 +15,60 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPainter>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QShortcut>
 #include <QSplitter>
+#include <QSplitterHandle>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QTabBar>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QVariant>
 
 namespace tw {
 namespace {
+
+// 带居中五圆点抓手的上下分割条，贴合工业工作台消息日志区拖拽条视觉。
+class DottedSplitterHandle final : public QSplitterHandle
+{
+public:
+    DottedSplitterHandle(Qt::Orientation orientation, QSplitter *parent)
+        : QSplitterHandle(orientation, parent)
+    {
+    }
+
+protected:
+    void paintEvent(QPaintEvent *event) override
+    {
+        QSplitterHandle::paintEvent(event);
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        p.setPen(Qt::NoPen);
+        p.setBrush(Theme::workbench().chromeDisabled);
+        const int cy = height() / 2;
+        const int cx = width() / 2;
+        for (int i = -2; i <= 2; ++i)
+            p.drawEllipse(QPointF(cx + i * 6.0, cy), 1.3, 1.3);
+    }
+};
+
+class DottedSplitter final : public QSplitter
+{
+public:
+    explicit DottedSplitter(Qt::Orientation orientation, QWidget *parent = nullptr)
+        : QSplitter(orientation, parent)
+    {
+    }
+
+protected:
+    QSplitterHandle *createHandle() override
+    {
+        return new DottedSplitterHandle(orientation(), this);
+    }
+};
 
 QFrame *verticalSeparator(const QString &name, int height)
 {
@@ -54,7 +97,7 @@ QWidget *firstFocusable(QWidget *root)
 } // namespace
 
 MainWindow::MainWindow(std::unique_ptr<PlatformServices> platform, ToolRegistry registry,
-                       QWidget *parent)
+                       QWidget *parent, const QString &initialToolId)
     : QMainWindow(parent)
     , m_platform(std::move(platform))
     , m_registry(std::move(registry))
@@ -63,6 +106,7 @@ MainWindow::MainWindow(std::unique_ptr<PlatformServices> platform, ToolRegistry 
 
     setObjectName(QStringLiteral("mainWindow"));
     setWindowTitle(AppInfo::productName());
+    setWindowIcon(IconFactory::appIcon());
     resize(1180, 760);
     setMinimumSize(900, 560);
     setStyleSheet(Theme::workbench().styleSheet());
@@ -104,14 +148,20 @@ MainWindow::MainWindow(std::unique_ptr<PlatformServices> platform, ToolRegistry 
         return;
     }
 
-    int first = 0;
-    for (int i = 0; i < m_host->count(); ++i) {
-        if (m_host->state(i) == ToolHost::State::Ready) {
-            first = i;
-            break;
+    int first = -1;
+    if (!initialToolId.isEmpty())
+        first = m_registry.indexOf(initialToolId);
+    if (first < 0) {
+        first = 0;
+        for (int i = 0; i < m_host->count(); ++i) {
+            if (m_host->state(i) == ToolHost::State::Ready) {
+                first = i;
+                break;
+            }
         }
     }
     selectTool(first);
+    refreshNavigationLock();
 }
 
 MainWindow::~MainWindow()
@@ -129,23 +179,25 @@ MainWindow::~MainWindow()
 
 void MainWindow::buildUi()
 {
+    const Theme &theme = Theme::workbench();
+
     auto *central = new QWidget;
     central->setObjectName(QStringLiteral("centralArea"));
     auto *root = new QVBoxLayout(central);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // ---- 顶栏 ----
+    // ---- 顶部浅色工具带 ----
     auto *top = new QFrame;
     top->setObjectName(QStringLiteral("topBar"));
-    top->setFixedHeight(48);
+    top->setFixedHeight(54);
     auto *topLayout = new QHBoxLayout(top);
-    topLayout->setContentsMargins(14, 0, 16, 0);
+    topLayout->setContentsMargins(12, 0, 12, 0);
     topLayout->setSpacing(10);
 
     auto *mark = new QLabel(QStringLiteral("滕"));
     mark->setObjectName(QStringLiteral("brandMark"));
-    mark->setFixedSize(28, 28);
+    mark->setFixedSize(30, 30);
     mark->setAlignment(Qt::AlignCenter);
     auto *name = new QLabel(AppInfo::productName());
     name->setObjectName(QStringLiteral("brandName"));
@@ -158,23 +210,44 @@ void MainWindow::buildUi()
     m_crumbSep->setObjectName(QStringLiteral("breadcrumbSep"));
     m_crumbPage = new QLabel;
     m_crumbPage->setObjectName(QStringLiteral("breadcrumbPage"));
-    auto *version = new QLabel(QStringLiteral("v%1").arg(AppInfo::version()));
-    version->setObjectName(QStringLiteral("topVersion"));
 
-    topLayout->addWidget(mark);
-    topLayout->addWidget(name);
-    topLayout->addWidget(sub);
+    // 右侧上图下文快捷操作按钮（NoFocus，不改变 F6 焦点环顺序）
+    m_topLogBtn = new QToolButton;
+    m_topLogBtn->setObjectName(QStringLiteral("topActionBtn"));
+    m_topLogBtn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    m_topLogBtn->setIcon(IconFactory::icon(QStringLiteral("log"), theme.primary, theme.primary,
+                                           theme.disabledText, theme.accent));
+    m_topLogBtn->setIconSize(QSize(18, 18));
+    m_topLogBtn->setText(QStringLiteral("消息日志"));
+    m_topLogBtn->setCheckable(true);
+    m_topLogBtn->setFocusPolicy(Qt::NoFocus);
+    m_topLogBtn->setToolTip(QStringLiteral("显示/隐藏底部消息日志 (Ctrl+L)"));
+
+    m_topHelpBtn = new QToolButton;
+    m_topHelpBtn->setObjectName(QStringLiteral("topActionBtn"));
+    m_topHelpBtn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    m_topHelpBtn->setIcon(IconFactory::icon(QStringLiteral("help"), theme.primary, theme.primary,
+                                            theme.disabledText, theme.accent));
+    m_topHelpBtn->setIconSize(QSize(18, 18));
+    m_topHelpBtn->setText(QStringLiteral("操作帮助"));
+    m_topHelpBtn->setFocusPolicy(Qt::NoFocus);
+    m_topHelpBtn->setToolTip(QStringLiteral("查看键盘快捷键与操作说明 (F1)"));
+
+    topLayout->addWidget(mark, 0, Qt::AlignVCenter);
+    topLayout->addWidget(name, 0, Qt::AlignVCenter);
+    topLayout->addWidget(sub, 0, Qt::AlignVCenter);
     topLayout->addSpacing(6);
-    topLayout->addWidget(verticalSeparator(QStringLiteral("topSeparator"), 22));
+    topLayout->addWidget(verticalSeparator(QStringLiteral("topSeparator"), 24));
     topLayout->addSpacing(6);
     topLayout->addWidget(m_crumbTool);
     topLayout->addWidget(m_crumbSep);
     topLayout->addWidget(m_crumbPage);
     topLayout->addStretch(1);
-    topLayout->addWidget(version);
+    topLayout->addWidget(m_topLogBtn);
+    topLayout->addWidget(m_topHelpBtn);
     root->addWidget(top);
 
-    // ---- 主体：工具栏 | (页面栈 / 日志) ----
+    // ---- 主体：左侧框线模块列表 | (工作区 / 消息日志) ----
     auto *body = new QWidget;
     auto *bodyLayout = new QHBoxLayout(body);
     bodyLayout->setContentsMargins(0, 0, 0, 0);
@@ -183,11 +256,11 @@ void MainWindow::buildUi()
     auto *railPanel = new QWidget;
     railPanel->setObjectName(QStringLiteral("railPanel"));
     railPanel->setAttribute(Qt::WA_StyledBackground, true);
-    railPanel->setFixedWidth(196);
+    railPanel->setFixedWidth(204);
     auto *railLayout = new QVBoxLayout(railPanel);
-    railLayout->setContentsMargins(0, 0, 0, 0);
-    railLayout->setSpacing(0);
-    auto *railHeader = new QLabel(QStringLiteral("工具"));
+    railLayout->setContentsMargins(8, 2, 8, 8);
+    railLayout->setSpacing(4);
+    auto *railHeader = new QLabel(QStringLiteral("工具模块"));
     railHeader->setObjectName(QStringLiteral("railHeader"));
     m_rail = new ToolRail;
     railLayout->addWidget(railHeader);
@@ -199,9 +272,9 @@ void MainWindow::buildUi()
     m_log = new LogPanel(m_platform->log());
     m_log->hide();
 
-    m_splitter = new QSplitter(Qt::Vertical);
+    m_splitter = new DottedSplitter(Qt::Vertical);
     m_splitter->setChildrenCollapsible(false);
-    m_splitter->setHandleWidth(1);
+    m_splitter->setHandleWidth(7);
     m_splitter->addWidget(m_stack);
     m_splitter->addWidget(m_log);
     m_splitter->setStretchFactor(0, 1);
@@ -211,7 +284,7 @@ void MainWindow::buildUi()
 
     setCentralWidget(central);
 
-    // ---- 状态栏 ----
+    // ---- 底部浅灰状态栏 ----
     m_status = new StatusStrip;
     statusBar()->setSizeGripEnabled(false);
     statusBar()->setFixedHeight(28);
@@ -232,6 +305,9 @@ void MainWindow::connectServices()
     connect(m_platform->gate(), &NavigationGate::changed, this, &MainWindow::refreshNavigationLock);
     connect(m_status->logToggle(), &QPushButton::toggled, this,
             [this](bool on) { setLogPanelVisible(on); });
+    connect(m_topLogBtn, &QToolButton::toggled, this,
+            [this](bool on) { setLogPanelVisible(on); });
+    connect(m_topHelpBtn, &QToolButton::clicked, this, &MainWindow::showShortcutHelp);
     connect(m_log, &LogPanel::closeRequested, this, [this] {
         setLogPanelVisible(false);
         if (m_rail->isEnabled())
@@ -265,19 +341,24 @@ void MainWindow::installShortcuts()
 QString MainWindow::shortcutHelpText()
 {
     return QStringLiteral(
-        "Ctrl+1 … Ctrl+9\t切换到第 N 个工具\n"
-        "Alt+↑ / Alt+↓\t上一个 / 下一个工具\n"
-        "Ctrl+PageUp / PageDown\t当前工具的上一页 / 下一页\n"
-        "F6\t在工具栏、页面条、页面、日志之间移动焦点\n"
-        "Ctrl+L\t显示 / 隐藏日志面板\n"
-        "↑ ↓（工具栏） ← →（页面条）\t逐项移动\n"
-        "F1\t显示本帮助\n\n"
-        "长时间任务进行期间导航被锁定，切换类快捷键暂时无效。");
+        "<table cellspacing='6' cellpadding='2'>"
+        "<tr><td><b>Ctrl+1 … Ctrl+9</b></td><td>切换到第 N 个工具</td></tr>"
+        "<tr><td><b>Alt+↑ / Alt+↓</b></td><td>上一个 / 下一个工具</td></tr>"
+        "<tr><td><b>Ctrl+PageUp / PageDown</b></td><td>当前工具的上一页 / 下一页</td></tr>"
+        "<tr><td><b>F6</b></td><td>在工具栏、页面条、页面、日志之间移动焦点</td></tr>"
+        "<tr><td><b>Ctrl+L</b></td><td>显示 / 隐藏消息日志面板</td></tr>"
+        "<tr><td><b>↑ ↓ / ← →</b></td><td>工具栏或页面条内逐项移动</td></tr>"
+        "<tr><td><b>F1</b></td><td>显示本帮助</td></tr>"
+        "</table>"
+        "<p style='margin-top:8px;color:#5a6673;'>长时间任务进行期间导航被锁定，切换类快捷键暂时无效。</p>");
 }
 
 void MainWindow::showShortcutHelp()
 {
-    QMessageBox::information(this, QStringLiteral("键盘操作"), shortcutHelpText());
+    QMessageBox box(QMessageBox::Information, QStringLiteral("键盘操作"),
+                    shortcutHelpText(), QMessageBox::Ok, this);
+    box.setTextFormat(Qt::RichText);
+    box.exec();
 }
 
 // ---------------------------------------------------------------------------
@@ -417,7 +498,6 @@ void MainWindow::refreshChrome()
 
     m_log->setCurrentTool(info.id, info.title);
     refreshStatus();
-    refreshNavigationLock();
 }
 
 void MainWindow::refreshStatus()
@@ -510,8 +590,10 @@ void MainWindow::setLogPanelVisible(bool visible)
         if (visible) {
             m_log->show();
             const int total = m_splitter->height();
-            if (total > 0)
-                m_splitter->setSizes({qMax(120, total - 220), 220});
+            if (total > 0) {
+                const int logHeight = qBound(130, total * 26 / 100, 195);
+                m_splitter->setSizes({qMax(160, total - logHeight), logHeight});
+            }
         } else {
             m_log->hide();
         }
@@ -521,6 +603,11 @@ void MainWindow::setLogPanelVisible(bool visible)
         const bool blocked = toggle->blockSignals(true);
         toggle->setChecked(visible);
         toggle->blockSignals(blocked);
+    }
+    if (m_topLogBtn && m_topLogBtn->isChecked() != visible) {
+        const bool blocked = m_topLogBtn->blockSignals(true);
+        m_topLogBtn->setChecked(visible);
+        m_topLogBtn->blockSignals(blocked);
     }
 }
 

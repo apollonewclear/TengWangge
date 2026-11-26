@@ -4,6 +4,8 @@
 #include <QObject>
 #include <QString>
 
+class QTimer;
+
 namespace tw {
 
 enum class StatusState { Idle, Info, Busy, Success, Error };
@@ -44,6 +46,7 @@ private:
     struct Slot {
         StatusMessage message;
         quint64 generation = 0;
+        QTimer *timer = nullptr;
     };
     QHash<QString, Slot> m_slots;
     quint64 m_nextGeneration = 1;

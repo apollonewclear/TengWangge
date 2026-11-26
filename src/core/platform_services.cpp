@@ -1,5 +1,8 @@
 #include "core/platform_services.h"
 
+#include <QMetaObject>
+#include <QThread>
+
 namespace tw {
 
 PlatformServices::PlatformServices(const DataPaths &paths, QObject *parent)
@@ -22,26 +25,65 @@ ToolServices::ToolServices(PlatformServices *platform, const QString &toolId)
 
 void ToolServices::log(LogLevel level, const QString &message) const
 {
-    if (m_platform)
-        m_platform->log()->append(level, m_toolId, message);
+    PlatformServices *platform = m_platform.data();
+    if (!platform)
+        return;
+    if (QThread::currentThread() == platform->thread()) {
+        platform->log()->append(level, m_toolId, message);
+        return;
+    }
+    const QString toolId = m_toolId;
+    QMetaObject::invokeMethod(
+        platform,
+        [platform, level, toolId, message]() {
+            platform->log()->append(level, toolId, message);
+        },
+        Qt::QueuedConnection);
 }
 
 void ToolServices::showStatus(StatusState state, const QString &text, int timeoutMs) const
 {
-    if (m_platform)
-        m_platform->status()->set(m_toolId, state, text, timeoutMs);
+    PlatformServices *platform = m_platform.data();
+    if (!platform)
+        return;
+    if (QThread::currentThread() == platform->thread()) {
+        platform->status()->set(m_toolId, state, text, timeoutMs);
+        return;
+    }
+    const QString toolId = m_toolId;
+    QMetaObject::invokeMethod(
+        platform,
+        [platform, state, toolId, text, timeoutMs]() {
+            platform->status()->set(toolId, state, text, timeoutMs);
+        },
+        Qt::QueuedConnection);
 }
 
 void ToolServices::clearStatus() const
 {
-    if (m_platform)
-        m_platform->status()->clear(m_toolId);
+    PlatformServices *platform = m_platform.data();
+    if (!platform)
+        return;
+    if (QThread::currentThread() == platform->thread()) {
+        platform->status()->clear(m_toolId);
+        return;
+    }
+    const QString toolId = m_toolId;
+    QMetaObject::invokeMethod(
+        platform,
+        [platform, toolId]() {
+            platform->status()->clear(toolId);
+        },
+        Qt::QueuedConnection);
 }
 
 NavigationLock ToolServices::lockNavigation(const QString &reason) const
 {
     if (!m_platform)
         return NavigationLock();
+    Q_ASSERT_X(QThread::currentThread() == m_platform->thread(),
+               "ToolServices::lockNavigation",
+               "NavigationLock must be acquired on the platform (GUI) thread");
     return NavigationLock(m_platform->gate(), m_toolId, reason);
 }
 

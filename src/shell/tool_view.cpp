@@ -6,6 +6,7 @@
 #include <QEvent>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QScrollArea>
 #include <QStackedWidget>
 #include <QStyle>
 #include <QTabBar>
@@ -28,9 +29,9 @@ ToolView::ToolView(const ToolInfo &info, QWidget *parent)
 
     auto *strip = new QFrame;
     strip->setObjectName(QStringLiteral("pageStrip"));
-    strip->setFixedHeight(40);
+    strip->setFixedHeight(42);
     auto *stripLayout = new QHBoxLayout(strip);
-    stripLayout->setContentsMargins(8, 0, 8, 0);
+    stripLayout->setContentsMargins(10, 0, 10, 0);
     stripLayout->setSpacing(0);
 
     m_tabs = new QTabBar;
@@ -56,6 +57,7 @@ ToolView::ToolView(const ToolInfo &info, QWidget *parent)
     connect(m_tabs, &QTabBar::currentChanged, this, [this](int index) {
         if (index >= 0 && index < m_stack->count())
             m_stack->setCurrentIndex(index);
+        refreshTabIcons();
         emit currentPageChanged(index);
     });
 }
@@ -75,14 +77,39 @@ bool ToolView::eventFilter(QObject *watched, QEvent *event)
 
 void ToolView::addPage(const PageInfo &info, QWidget *widget)
 {
-    const Theme &theme = Theme::workbench();
     m_pages.append(info);
-    m_stack->addWidget(widget);
-    const QIcon icon = info.iconKey.isEmpty()
-        ? QIcon()
-        : IconFactory::icon(info.iconKey, theme.textMuted, theme.text, theme.disabledText);
-    const int tab = m_tabs->addTab(icon, info.title);
+    m_pageWidgets.append(widget);
+
+    // 外包无边框 QScrollArea，防止小窗口或展开日志面板时业务表单被截断。
+    auto *scroll = new QScrollArea;
+    scroll->setObjectName(QStringLiteral("pageScrollArea"));
+    if (scroll->viewport())
+        scroll->viewport()->setObjectName(QStringLiteral("pageScrollViewport"));
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
+    scroll->setFocusPolicy(Qt::NoFocus);
+    scroll->setWidget(widget);
+    m_stack->addWidget(scroll);
+
+    const int tab = m_tabs->addTab(info.title);
     m_tabs->setTabToolTip(tab, info.summary.isEmpty() ? info.title : info.summary);
+    refreshTabIcons();
+}
+
+void ToolView::refreshTabIcons()
+{
+    const Theme &theme = Theme::workbench();
+    const int active = m_tabs->currentIndex();
+    for (int i = 0; i < m_pages.size() && i < m_tabs->count(); ++i) {
+        const QString &key = m_pages.at(i).iconKey;
+        if (key.isEmpty())
+            continue;
+        const bool selected = (i == active) && m_tabs->isEnabled();
+        const QIcon icon = selected
+            ? IconFactory::icon(key, theme.panel, theme.panel, theme.disabledText, theme.panel)
+            : IconFactory::icon(key, theme.primary, theme.panel, theme.disabledText, theme.accent);
+        m_tabs->setTabIcon(i, icon);
+    }
 }
 
 int ToolView::currentPage() const
@@ -99,7 +126,9 @@ PageInfo ToolView::pageInfo(int index) const
 
 QWidget *ToolView::pageWidget(int index) const
 {
-    return m_stack->widget(index);
+    if (index < 0 || index >= m_pageWidgets.size())
+        return nullptr;
+    return m_pageWidgets.at(index);
 }
 
 int ToolView::indexOfPage(const QString &pageId) const
@@ -127,6 +156,7 @@ bool ToolView::stepPage(int delta)
 void ToolView::setNavigationEnabled(bool enabled)
 {
     m_tabs->setEnabled(enabled);
+    refreshTabIcons();
 }
 
 } // namespace tw

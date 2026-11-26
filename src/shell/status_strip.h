@@ -35,6 +35,7 @@ private:
     QLabel *m_dot = nullptr;
     ElidedLabel *m_text = nullptr;
     QLabel *m_lock = nullptr;
+    QLabel *m_meta = nullptr;
     QPushButton *m_logToggle = nullptr;
 };
 

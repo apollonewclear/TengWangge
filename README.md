@@ -133,9 +133,8 @@ TENGWANGGE_SCREENSHOT_DIR=/tmp/tw-shots QT_QPA_PLATFORM=offscreen ./build/tests/
 ## 验证状态
 
 本仓库在下列环境验证过（全部 `-DTENGWANGGE_WARNINGS_AS_ERRORS=ON`，三类测试全部通过）：
-Ubuntu 24.04 + Qt 5.15.13，分别用 g++ 10、g++ 13、clang++ 18；CMake 3.22.6 与 3.28。
-**尚未在真实的麒麟 KylinSec 3.5（GCC 10.3 / Qt 5.15.2）机器上跑过。** 代码只使用 Qt 5.15.0
-即有的 API，所以预期可直接编译；如果在麒麟上遇到问题，请把编译输出反馈回来。
+- **麒麟 KylinSec OS 3.5**（内核 `4.19.90-2408.1.0.0288.kb30.ky3_5.x86_64`，GCC 10.3.1，CMake 3.22.0，Qt 5.15.2）
+- Ubuntu 24.04 + Qt 5.15.13（g++ 10、g++ 13、clang++ 18；CMake 3.22.6 与 3.28）
 
 ## 许可与素材
 

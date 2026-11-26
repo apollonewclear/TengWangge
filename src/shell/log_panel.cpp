@@ -15,15 +15,24 @@
 namespace tw {
 namespace {
 
-QColor levelColor(LogLevel level)
+QString formatPanelLine(const LogEntry &entry, bool showAll,
+                        const LogPanel::TitleResolver &resolver)
 {
-    switch (level) {
-    case LogLevel::Success: return QColor(0x1e, 0x7a, 0x3c);
-    case LogLevel::Warning: return QColor(0x9a, 0x67, 0x00);
-    case LogLevel::Error: return Theme::workbench().danger;
-    case LogLevel::Info: break;
+    const QString stamp = entry.time.toString(QStringLiteral("yyyy/MM/dd HH:mm:ss"));
+    const QString level = LogBuffer::levelName(entry.level);
+
+    if (showAll) {
+        QString source = QStringLiteral("平台");
+        if (!entry.toolId.isEmpty())
+            source = resolver ? resolver(entry.toolId) : entry.toolId;
+        if (source.isEmpty())
+            source = entry.toolId;
+        return QStringLiteral("[%1][%2] [%3] %4").arg(level, stamp, source, entry.message);
     }
-    return Theme::workbench().text;
+
+    if (entry.toolId.isEmpty())
+        return QStringLiteral("[%1][%2] [平台] %3").arg(level, stamp, entry.message);
+    return QStringLiteral("[%1][%2] %3").arg(level, stamp, entry.message);
 }
 
 } // namespace
@@ -37,13 +46,13 @@ LogPanel::LogPanel(LogBuffer *buffer, QWidget *parent)
     setAccessibleName(QStringLiteral("日志面板"));
 
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setContentsMargins(8, 2, 8, 6);
     layout->setSpacing(0);
 
     auto *header = new QFrame;
     header->setObjectName(QStringLiteral("logHeader"));
     auto *headerLayout = new QHBoxLayout(header);
-    headerLayout->setContentsMargins(12, 4, 8, 4);
+    headerLayout->setContentsMargins(10, 4, 8, 4);
     headerLayout->setSpacing(10);
 
     m_title = new QLabel;
@@ -131,19 +140,37 @@ bool LogPanel::matches(const LogEntry &entry) const
 void LogPanel::updateTitle()
 {
     if (showsAllTools() || m_toolTitle.isEmpty())
-        m_title->setText(QStringLiteral("日志 · 全部工具"));
+        m_title->setText(QStringLiteral("消息日志 · 全部工具"));
     else
-        m_title->setText(QStringLiteral("日志 · %1").arg(m_toolTitle));
+        m_title->setText(QStringLiteral("消息日志 · %1").arg(m_toolTitle));
 }
 
 void LogPanel::reload()
 {
-    m_view->clear();
+    const Theme &theme = Theme::workbench();
     const QVector<LogEntry> all = m_buffer->entries();
+    const bool allTools = showsAllTools();
+
+    m_view->setUpdatesEnabled(false);
+    m_view->clear();
+    QTextCursor cursor(m_view->document());
+    cursor.beginEditBlock();
+    bool first = true;
     for (const LogEntry &entry : all) {
-        if (matches(entry))
-            appendEntry(entry);
+        if (!matches(entry))
+            continue;
+        QTextCharFormat format;
+        format.setForeground(theme.logColor(entry.level));
+        if (!first)
+            cursor.insertBlock();
+        cursor.insertText(formatPanelLine(entry, allTools, m_resolver), format);
+        first = false;
     }
+    cursor.endEditBlock();
+    m_view->setUpdatesEnabled(true);
+
+    QScrollBar *bar = m_view->verticalScrollBar();
+    bar->setValue(bar->maximum());
 }
 
 void LogPanel::appendEntry(const LogEntry &entry)
@@ -151,22 +178,11 @@ void LogPanel::appendEntry(const LogEntry &entry)
     QScrollBar *bar = m_view->verticalScrollBar();
     const bool atEnd = bar->value() >= bar->maximum() - 2;
 
-    QString line = LogBuffer::format(entry);
-    if (showsAllTools()) {
-        QString source = QStringLiteral("平台");
-        if (!entry.toolId.isEmpty())
-            source = m_resolver ? m_resolver(entry.toolId) : entry.toolId;
-        if (source.isEmpty())
-            source = entry.toolId;
-        line = QStringLiteral("%1  <%2>  [%3]  %4")
-                   .arg(entry.time.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")), source,
-                        LogBuffer::levelName(entry.level), entry.message);
-    }
-
+    const QString line = formatPanelLine(entry, showsAllTools(), m_resolver);
     QTextCursor cursor(m_view->document());
     cursor.movePosition(QTextCursor::End);
     QTextCharFormat format;
-    format.setForeground(levelColor(entry.level));
+    format.setForeground(Theme::workbench().logColor(entry.level));
     if (!m_view->document()->isEmpty())
         cursor.insertBlock();
     cursor.insertText(line, format);

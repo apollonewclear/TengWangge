@@ -116,6 +116,9 @@ public:
         if (spec.pageProblem == QLatin1String("null"))
             pages.append({PageInfo{QStringLiteral("nullpage"), QStringLiteral("空"), QString(), QString()},
                           nullptr});
+        if (spec.pageProblem == QLatin1String("dupwidget") && !pages.isEmpty())
+            pages.append({PageInfo{QStringLiteral("dupwidget"), QStringLiteral("复用"), QString(), QString()},
+                          pages.first().widget});
         return pages;
     }
 
@@ -204,10 +207,12 @@ private slots:
     void host_failedInitOnlyAffectsThatTool();
     void host_throwingInitIsContained();
     void host_invalidPagesMarkToolUnavailable();
+    void host_failedPagesStillShutDownInitializedTool();
     void host_shutdownIsIdempotentAndReleasesLocks();
 
     // ---- 主窗口：两层导航 ----
     void window_selectsFirstToolAndSyncsRail();
+    void window_initialToolIdSkipsDefaultToolCreation();
     void window_railClickAndKeyboardSwitchTools();
     void window_pageSelectionIsPerTool();
     void window_breadcrumbAndTitleFollowSelection();
@@ -349,7 +354,8 @@ void UiTests::host_throwingInitIsContained()
 void UiTests::host_invalidPagesMarkToolUnavailable()
 {
     for (const QString &problem : {QStringLiteral("empty"), QStringLiteral("dup"), QStringLiteral("null"),
-                                   QStringLiteral("throw"), QStringLiteral("badid")}) {
+                                   QStringLiteral("throw"), QStringLiteral("badid"),
+                                   QStringLiteral("dupwidget")}) {
         QVector<FakeTool::Spec> specs = threeTools();
         specs[1].pageProblem = problem;
         Fixture f(specs);
@@ -362,6 +368,18 @@ void UiTests::host_invalidPagesMarkToolUnavailable()
         QVERIFY(f.window->selectTool(2));
         QVERIFY(f.window->currentView() != nullptr);
     }
+}
+
+void UiTests::host_failedPagesStillShutDownInitializedTool()
+{
+    QVector<FakeTool::Spec> specs = threeTools();
+    specs[1].pageProblem = QStringLiteral("empty");
+    Fixture f(specs);
+    QVERIFY(f.window->selectTool(1));
+    QCOMPARE(f.window->toolHost()->state(1), ToolHost::State::Failed);
+    f.window->toolHost()->shutdown();
+    QCOMPARE(f.tools[1]->initCalls, 1);
+    QCOMPARE(f.tools[1]->shutdownCalls, 1);
 }
 
 void UiTests::host_shutdownIsIdempotentAndReleasesLocks()
@@ -392,6 +410,26 @@ void UiTests::window_selectsFirstToolAndSyncsRail()
     QVERIFY(!f.window->selectTool(9));
     QVERIFY(!f.window->selectTool(-1));
     QCOMPARE(f.window->currentToolIndex(), 2);
+}
+
+void UiTests::window_initialToolIdSkipsDefaultToolCreation()
+{
+    QTemporaryDir dir;
+    auto owned = std::make_unique<PlatformServices>(DataPaths(dir.path() + QStringLiteral("/data")));
+    ToolRegistry registry;
+    QVector<FakeTool *> tools;
+    for (const FakeTool::Spec &spec : threeTools()) {
+        auto tool = std::make_unique<FakeTool>(spec);
+        tools.append(tool.get());
+        QVERIFY(registry.add(std::move(tool)));
+    }
+    MainWindow window(std::move(owned), std::move(registry), nullptr, QStringLiteral("beta"));
+    QCOMPARE(window.currentToolIndex(), 1);
+    QCOMPARE(window.currentToolId(), QStringLiteral("beta"));
+    QCOMPARE(tools[0]->createCalls, 0);
+    QCOMPARE(tools[0]->activatedCalls, 0);
+    QCOMPARE(tools[1]->createCalls, 1);
+    QCOMPARE(tools[1]->activatedCalls, 1);
 }
 
 void UiTests::window_railClickAndKeyboardSwitchTools()

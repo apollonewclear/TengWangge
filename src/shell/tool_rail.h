@@ -23,6 +23,7 @@ public:
         IconKeyRole = Qt::UserRole + 1,
         AvailableRole,
         ShortcutRole,
+        SummaryRole,
     };
 
     explicit ToolRail(QWidget *parent = nullptr);

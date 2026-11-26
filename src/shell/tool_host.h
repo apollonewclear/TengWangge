@@ -57,6 +57,7 @@ private:
     struct Slot {
         State state = State::Pending;
         QString error;
+        bool initialized = false;
         bool active = false;
         bool pagesAttempted = false;
         QPointer<ToolView> view;

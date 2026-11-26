@@ -23,9 +23,12 @@ QString validatePages(const QVector<ToolPage> &pages)
     if (pages.isEmpty())
         return QStringLiteral("工具没有提供任何页面");
     QSet<QString> seen;
+    QSet<QWidget *> seenWidgets;
     for (const ToolPage &page : pages) {
         if (!page.widget)
             return QStringLiteral("页面“%1”没有窗口部件").arg(page.info.id);
+        if (seenWidgets.contains(page.widget))
+            return QStringLiteral("页面“%1”复用了同一个窗口部件实例").arg(page.info.id);
         if (!isValidIdentifier(page.info.id))
             return QStringLiteral("页面标识无效：%1").arg(page.info.id);
         if (page.info.title.trimmed().isEmpty())
@@ -33,6 +36,7 @@ QString validatePages(const QVector<ToolPage> &pages)
         if (seen.contains(page.info.id))
             return QStringLiteral("页面标识重复：%1").arg(page.info.id);
         seen.insert(page.info.id);
+        seenWidgets.insert(page.widget);
     }
     return {};
 }
@@ -108,6 +112,7 @@ void ToolHost::initializeAll()
             message = QStringLiteral("未知异常");
         }
         if (ok) {
+            m_slots[i].initialized = true;
             m_slots[i].state = State::Ready;
         } else {
             fail(i, message.isEmpty() ? QStringLiteral("初始化失败") : message);
@@ -145,8 +150,12 @@ bool ToolHost::createView(int index)
     if (message.isEmpty())
         message = validatePages(pages);
     if (!message.isEmpty()) {
-        for (const ToolPage &page : pages)
-            delete page.widget;
+        QSet<QWidget *> uniqueWidgets;
+        for (const ToolPage &page : pages) {
+            if (page.widget)
+                uniqueWidgets.insert(page.widget);
+        }
+        qDeleteAll(uniqueWidgets);
         fail(index, QStringLiteral("页面无效：%1").arg(message));
         return false;
     }
@@ -199,9 +208,16 @@ bool ToolHost::activate(int index)
         Slot &previous = m_slots[m_current];
         if (previous.active) {
             previous.active = false;
+            const ToolInfo prevInfo = m_registry->infoAt(m_current);
             try {
                 m_registry->at(m_current)->deactivated();
+            } catch (const std::exception &e) {
+                m_platform->servicesFor(QString()).logError(
+                    QStringLiteral("工具“%1”停用回调异常：%2")
+                        .arg(prevInfo.title, describeException(e)));
             } catch (...) {
+                m_platform->servicesFor(QString()).logError(
+                    QStringLiteral("工具“%1”停用回调发生未知异常").arg(prevInfo.title));
             }
         }
     }
@@ -215,9 +231,16 @@ bool ToolHost::activate(int index)
         m_stack->setCurrentWidget(slot.view);
         if (!slot.active) {
             slot.active = true;
+            const ToolInfo curInfo = m_registry->infoAt(index);
             try {
                 m_registry->at(index)->activated();
+            } catch (const std::exception &e) {
+                m_platform->servicesFor(QString()).logError(
+                    QStringLiteral("工具“%1”激活回调异常：%2")
+                        .arg(curInfo.title, describeException(e)));
             } catch (...) {
+                m_platform->servicesFor(QString()).logError(
+                    QStringLiteral("工具“%1”激活回调发生未知异常").arg(curInfo.title));
             }
         }
     } else {
@@ -234,17 +257,35 @@ void ToolHost::shutdown()
     m_shutDown = true;
     for (int i = 0; i < m_slots.size(); ++i) {
         Slot &slot = m_slots[i];
-        if (slot.state != State::Ready)
+        if (!slot.initialized)
             continue;
         ITool *tool = m_registry->at(i);
-        try {
-            if (slot.active)
+        const ToolInfo toolInfo = m_registry->infoAt(i);
+        if (slot.active) {
+            try {
                 tool->deactivated();
-            tool->shutdown();
-        } catch (...) {
+            } catch (const std::exception &e) {
+                m_platform->servicesFor(QString()).logError(
+                    QStringLiteral("工具“%1”退出停用异常：%2")
+                        .arg(toolInfo.title, describeException(e)));
+            } catch (...) {
+                m_platform->servicesFor(QString()).logError(
+                    QStringLiteral("工具“%1”退出停用发生未知异常").arg(toolInfo.title));
+            }
+            slot.active = false;
         }
-        slot.active = false;
-        m_platform->gate()->releaseAllFor(m_registry->infoAt(i).id);
+        try {
+            tool->shutdown();
+        } catch (const std::exception &e) {
+            m_platform->servicesFor(QString()).logError(
+                QStringLiteral("工具“%1”关闭清理异常：%2")
+                    .arg(toolInfo.title, describeException(e)));
+        } catch (...) {
+            m_platform->servicesFor(QString()).logError(
+                QStringLiteral("工具“%1”关闭清理发生未知异常").arg(toolInfo.title));
+        }
+        slot.initialized = false;
+        m_platform->gate()->releaseAllFor(toolInfo.id);
     }
 }
 

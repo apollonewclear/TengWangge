@@ -8,16 +8,17 @@
 
 namespace tw {
 
-// 用 QPainter 现画的线性图标，不带任何外部图片资源。ToolInfo/PageInfo 里的
-// iconKey 在这里解析；未知或为空的 key 退回通用方块图标。
-// 新增图标：在 icon_factory.cpp 的 drawGlyph() 里加一个 case，并写进 knownKeys()。
+// 用 QPainter 现画的双色/单色线性图标，带 QPixmapCache 缓存，不引入外部图片资源。
+// ToolInfo/PageInfo 里的 iconKey 在这里解析；未知或为空的 key 退回通用方块图标。
 class IconFactory
 {
 public:
     static QStringList knownKeys();
-    static QPixmap pixmap(const QString &key, int size, const QColor &color, qreal devicePixelRatio = 2.0);
+    static QPixmap pixmap(const QString &key, int size, const QColor &color,
+                          qreal devicePixelRatio = 2.0, const QColor &accent = QColor());
     static QIcon icon(const QString &key, const QColor &normal, const QColor &selected,
-                      const QColor &disabled);
+                      const QColor &disabled, const QColor &normalAccent = QColor());
+    static QIcon appIcon();
 };
 
 } // namespace tw

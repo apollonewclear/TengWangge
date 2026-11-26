@@ -47,8 +47,11 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+    void refreshTabIcons();
+
     ToolInfo m_info;
     QVector<PageInfo> m_pages;
+    QVector<QWidget *> m_pageWidgets;
     QTabBar *m_tabs = nullptr;
     QStackedWidget *m_stack = nullptr;
 };

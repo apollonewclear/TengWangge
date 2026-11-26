@@ -13,6 +13,7 @@ class QFrame;
 class QLabel;
 class QSplitter;
 class QStackedWidget;
+class QToolButton;
 
 namespace tw {
 
@@ -35,7 +36,7 @@ class MainWindow : public QMainWindow
 
 public:
     MainWindow(std::unique_ptr<PlatformServices> platform, ToolRegistry registry,
-               QWidget *parent = nullptr);
+               QWidget *parent = nullptr, const QString &initialToolId = QString());
     ~MainWindow() override;
 
     // ---- 导航 ----
@@ -99,6 +100,8 @@ private:
     QLabel *m_crumbTool = nullptr;
     QLabel *m_crumbSep = nullptr;
     QLabel *m_crumbPage = nullptr;
+    QToolButton *m_topLogBtn = nullptr;
+    QToolButton *m_topHelpBtn = nullptr;
 
     QPointer<QWidget> m_focusBeforeLock;
     std::function<bool(const QString &)> m_closeGuard;

@@ -1,7 +1,9 @@
 #include "shell/status_strip.h"
 
+#include "core/app_info.h"
 #include "shell/elided_label.h"
 
+#include <QDateTime>
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QStyle>
@@ -17,6 +19,14 @@ void repolish(QWidget *w)
     w->update();
 }
 
+QString currentUserName()
+{
+    QString user = qEnvironmentVariable("USER").trimmed();
+    if (user.isEmpty())
+        user = qEnvironmentVariable("USERNAME").trimmed();
+    return user.isEmpty() ? QStringLiteral("local") : user;
+}
+
 } // namespace
 
 StatusStrip::StatusStrip(QWidget *parent)
@@ -26,7 +36,7 @@ StatusStrip::StatusStrip(QWidget *parent)
     setAccessibleName(QStringLiteral("状态栏"));
 
     auto *layout = new QHBoxLayout(this);
-    layout->setContentsMargins(8, 0, 4, 0);
+    layout->setContentsMargins(10, 0, 8, 0);
     layout->setSpacing(8);
 
     m_dot = new QLabel;
@@ -42,16 +52,25 @@ StatusStrip::StatusStrip(QWidget *parent)
     m_lock->setAccessibleName(QStringLiteral("导航锁定"));
     m_lock->hide();
 
+    m_meta = new QLabel(
+        QStringLiteral("用户:%1   启动时间:%2   版本:v%3")
+            .arg(currentUserName(),
+                 QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")),
+                 AppInfo::version()));
+    m_meta->setObjectName(QStringLiteral("statusMeta"));
+    m_meta->setFocusPolicy(Qt::NoFocus);
+
     m_logToggle = new QPushButton(QStringLiteral("日志"));
     m_logToggle->setObjectName(QStringLiteral("logToggle"));
     m_logToggle->setCheckable(true);
     m_logToggle->setFocusPolicy(Qt::StrongFocus);
-    m_logToggle->setToolTip(QStringLiteral("显示/隐藏日志面板 (Ctrl+L)"));
+    m_logToggle->setToolTip(QStringLiteral("显示/隐藏消息日志面板 (Ctrl+L)"));
     m_logToggle->setAccessibleName(QStringLiteral("日志开关"));
 
     layout->addWidget(m_dot, 0, Qt::AlignVCenter);
     layout->addWidget(m_text, 1);
     layout->addWidget(m_lock, 0, Qt::AlignVCenter);
+    layout->addWidget(m_meta, 0, Qt::AlignVCenter);
     layout->addWidget(m_logToggle, 0, Qt::AlignVCenter);
 
     setStatus(StatusMessage{StatusState::Idle, StatusBoard::idleText()});

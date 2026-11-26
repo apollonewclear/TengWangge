@@ -1,12 +1,14 @@
 #include "core/app_info.h"
 #include "core/data_paths.h"
 #include "core/platform_services.h"
+#include "shell/icon_factory.h"
 #include "shell/main_window.h"
 #include "shell/tool_registry.h"
 #include "tools/builtin_tools.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QGuiApplication>
 #include <QMessageBox>
 #include <QPixmap>
 #include <QTextStream>
@@ -32,14 +34,25 @@ bool parseSize(const QString &text, QSize *size)
     return true;
 }
 
+bool isHeadlessPlatform()
+{
+    const QString platform = QGuiApplication::platformName();
+    return platform == QLatin1String("offscreen") || platform == QLatin1String("minimal");
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
 {
+    // Qt 5.15 默认不开启高分屏缩放，需在构造 QApplication 前显式启用以适配麒麟 2K/4K 屏幕。
+    QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+    QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+
     QApplication app(argc, argv);
     QApplication::setApplicationName(tw::AppInfo::internalName());
     QApplication::setApplicationDisplayName(tw::AppInfo::productName());
     QApplication::setApplicationVersion(tw::AppInfo::version());
+    QApplication::setWindowIcon(tw::IconFactory::appIcon());
 
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("滕王阁 — 可扩展的桌面工具箱平台"));
@@ -69,9 +82,15 @@ int main(int argc, char *argv[])
                                     .arg(paths.root(), problem,
                                          QString::fromLatin1(tw::DataPaths::overrideVariable()));
         QTextStream(stderr) << message << Qt::endl;
-        if (!parser.isSet(shotOption))
+        if (!parser.isSet(shotOption) && !isHeadlessPlatform())
             QMessageBox::critical(nullptr, tw::AppInfo::productName(), message);
         return 2;
+    }
+
+    QSize size;
+    if (parser.isSet(sizeOption) && !parseSize(parser.value(sizeOption), &size)) {
+        QTextStream(stderr) << "--window-size 格式应为 宽x高，例如 1180x760" << Qt::endl;
+        return 1;
     }
 
     tw::ToolRegistry registry;
@@ -81,20 +100,18 @@ int main(int argc, char *argv[])
         return 3;
     }
 
-    tw::MainWindow window(std::make_unique<tw::PlatformServices>(paths), std::move(registry));
-
-    QSize size;
-    if (parser.isSet(sizeOption)) {
-        if (!parseSize(parser.value(sizeOption), &size)) {
-            QTextStream(stderr) << "--window-size 格式应为 宽x高，例如 1180x760" << Qt::endl;
-            return 1;
-        }
-        window.resize(size);
-    }
-    if (parser.isSet(toolOption) && !window.selectToolById(parser.value(toolOption))) {
-        QTextStream(stderr) << "未知工具：" << parser.value(toolOption) << Qt::endl;
+    const QString requestedTool = parser.isSet(toolOption) ? parser.value(toolOption) : QString();
+    if (!requestedTool.isEmpty() && registry.indexOf(requestedTool) < 0) {
+        QTextStream(stderr) << "未知工具：" << requestedTool << Qt::endl;
         return 1;
     }
+
+    // 直接将初始工具传入 MainWindow，避免默认第 0 个工具被无条件提前实例化页面与数据目录。
+    tw::MainWindow window(std::make_unique<tw::PlatformServices>(paths), std::move(registry),
+                          nullptr, requestedTool);
+
+    if (parser.isSet(sizeOption))
+        window.resize(size);
     if (parser.isSet(pageOption) && !window.selectPageById(parser.value(pageOption))) {
         QTextStream(stderr) << "未知页面：" << parser.value(pageOption) << Qt::endl;
         return 1;
@@ -106,7 +123,8 @@ int main(int argc, char *argv[])
     if (parser.isSet(shotOption)) {
         const QString file = parser.value(shotOption);
         int exitCode = 0;
-        QTimer::singleShot(200, &app, [&] {
+        QTimer::singleShot(120, &app, [&] {
+            QApplication::processEvents();
             if (!window.grab().save(file, "PNG")) {
                 QTextStream(stderr) << "无法保存截图：" << file << Qt::endl;
                 exitCode = 1;

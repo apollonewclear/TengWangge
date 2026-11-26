@@ -165,9 +165,9 @@ const QString dir = services.dataDir(&error);   // <数据根>/tools/<工具id>/
 
 | 控件 | `role` 值 |
 | --- | --- |
-| `QLabel` | `pageTitle` 页面标题、`pageSubtitle` 副标题、`sectionTitle` 分组标题、`fieldLabel` 字段名、`hint` 提示、`value` 等宽取值 |
-| `QFrame` | `card` 白底卡片 |
-| `QPushButton` | `primary` 主操作、`danger` 危险操作；不设置则为普通按钮 |
+| `QLabel` | `pageTitle` 页面标题、`pageSubtitle` 副标题、`sectionTitle` 分组标题、`fieldLabel` 字段名、`hint` 提示、`value` 等宽取值、`code` 钢蓝色编码、`pill` 青色状态胶囊 |
+| `QFrame` | `card` 白底框线卡片、`toolbar` 顶部浅灰操作栏、`tableHeader` 表头行、`tableRow` / `tableRowAlt` 表格数据行 |
+| `QPushButton` | `primary` 主操作、`teal` 青色胶囊按钮、`danger` 危险操作；不设置则为白底框线普通按钮 |
 
 ```cpp
 label->setProperty("role", QStringLiteral("pageTitle"));
@@ -180,7 +180,7 @@ button->setProperty("role", QStringLiteral("primary"));
 
 ## 6. 图标
 
-`iconKey` 取自 `IconFactory::knownKeys()`：`overview task status info environment log lock`。
+`iconKey` 取自 `IconFactory::knownKeys()`：`overview task status info environment log lock refresh help`。
 未知的 key 显示通用方块图标。新增图标：在 `src/shell/icon_factory.cpp` 的 `drawGlyph()`
 里加一个分支（16×16 坐标系的线性图形），并把 key 加进 `knownKeys()`；
 `theme_iconsRenderForAllKnownKeys` 会校验每个 key 都画出了像素。

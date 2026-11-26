@@ -5,5 +5,7 @@ Name[zh_CN]=滕王阁
 GenericName=工具箱平台
 Comment=可扩展的桌面工具箱平台
 Exec=TengWangge
+Icon=tengwangge
+StartupWMClass=TengWangge
 Terminal=false
 Categories=Utility;

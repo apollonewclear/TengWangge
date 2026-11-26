@@ -28,6 +28,17 @@ QColor Theme::statusColor(StatusState state) const
     return statusIdle;
 }
 
+QColor Theme::logColor(LogLevel level) const
+{
+    switch (level) {
+    case LogLevel::Info: return logInfo;
+    case LogLevel::Success: return logSuccess;
+    case LogLevel::Warning: return logWarning;
+    case LogLevel::Error: return logError;
+    }
+    return logInfo;
+}
+
 QMap<QString, QString> Theme::tokens() const
 {
     QMap<QString, QString> map;
@@ -43,10 +54,17 @@ QMap<QString, QString> Theme::tokens() const
     color("chromeMuted", chromeMuted);
     color("chromeDisabled", chromeDisabled);
     color("accent", accent);
+    color("teal", teal);
     color("surface", surface);
     color("panel", panel);
     color("panelAlt", panelAlt);
+    color("selectionSoft", selectionSoft);
+    color("dangerSoft", dangerSoft);
+    color("lockBg", lockBg);
+    color("lockBorder", lockBorder);
+    color("lockText", lockText);
     color("border", border);
+    color("borderSoft", borderSoft);
     color("text", text);
     color("textMuted", textMuted);
     color("disabledText", disabledText);

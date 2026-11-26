@@ -48,21 +48,30 @@ void StatusBoard::set(const QString &toolId, StatusState state, const QString &t
     Slot &slot = m_slots[toolId];
     slot.message = StatusMessage{effective, blank ? idleText() : text};
     slot.generation = generation;
-    emit changed(toolId);
+    if (slot.timer)
+        slot.timer->stop();
 
     const int timeout = timeoutMs == UseDefaultTimeout ? defaultTimeout(effective) : timeoutMs;
-    if (timeout <= 0 || effective == StatusState::Idle)
-        return;
-    QTimer::singleShot(timeout, this, [this, toolId, generation]() {
-        const auto it = m_slots.constFind(toolId);
-        if (it != m_slots.constEnd() && it->generation == generation)
-            clear(toolId);
-    });
+    if (timeout > 0 && effective != StatusState::Idle) {
+        if (!slot.timer) {
+            slot.timer = new QTimer(this);
+            slot.timer->setSingleShot(true);
+            connect(slot.timer, &QTimer::timeout, this, [this, toolId]() {
+                const auto it = m_slots.constFind(toolId);
+                if (it != m_slots.constEnd() && it->message.state != StatusState::Idle)
+                    clear(toolId);
+            });
+        }
+        slot.timer->start(timeout);
+    }
+    emit changed(toolId);
 }
 
 void StatusBoard::clear(const QString &toolId)
 {
     Slot &slot = m_slots[toolId];
+    if (slot.timer)
+        slot.timer->stop();
     slot.message = StatusMessage{StatusState::Idle, idleText()};
     slot.generation = m_nextGeneration++;
     emit changed(toolId);
