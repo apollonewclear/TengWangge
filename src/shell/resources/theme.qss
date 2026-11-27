@@ -226,6 +226,12 @@ QPushButton {
 }
 QPushButton:hover { background: @chromeHover@; border-color: @chromeSelectedBorder@; }
 QPushButton:pressed { background: @chromeSelected@; }
+QPushButton:checked {
+    background: @chromeSelected@;
+    color: @primary@;
+    border-color: @chromeSelectedBorder@;
+    font-weight: 600;
+}
 QPushButton:focus { border: 1px solid @primary@; }
 QPushButton:disabled { color: @disabledText@; background: @panelAlt@; border-color: @borderSoft@; }
 QPushButton[role="primary"] {

@@ -4,7 +4,41 @@
 
 ---
 
-## 2026-11-27 · 第四批改进（工业工程软件大图标顶栏与左树右表 UI 彻底重构）
+## 2026-11-27 · 第五批改进（新增 Beyond Compare 风格文件对比模块 `compare`）
+
+**主题**：上线首个正式业务工具模块 `compare`（文件对比），覆盖本地文件夹递归对比、文本并排编辑对比、INI/配置文件按节键核对与 Base/Left/Right 三方合并
+
+### 修改前备份与历史备份清理
+- 已按确认删除前四批历史备份（`backup/pre-batch1..4` 及本地/麒麟归档）。
+- **本批修改前备份**：
+  - 本地 Git 备份分支：`backup/pre-compare-0503d6a`
+  - 本地归档：`/Users/Apple/Desktop/work/code/gemini/backups/tengwangge_pre_compare_0503d6a.{bundle,tar.gz}`
+  - 麒麟远程备份：`/home/nusp/TengWangge_backups/TengWangge_gemini_pre_compare_0503d6a.tar.gz`
+
+### 主要改动
+1. **纯 Qt Core 比较与合并核心引擎**（`src/tools/compare/compare_engine.{h,cpp}`）
+   - **文本比较**：行级 LCS / 锚点分治比对（支持忽略空白、忽略大小写、忽略空行）+ 行内字符级差异定位 + 差异块双向复制（`applyHunkToRight` / `applyHunkToLeft`）+ Unified 报告导出 + `QSaveFile` 原子保存与自动 `.bak` 备份。
+   - **三方合并**：基于 `Base / Left / Right` 的非重叠自动合并与冲突检测，支持单块/批量采纳左侧、右侧、基线、双侧保留（左+右）及冲突标记生成。
+   - **INI 配置按节键比对**：面向 `sca_model_conf.ini` 等工程配置，解析并保留原文件注释与行尾注释，支持按 `[Section]` + 键名比对、双向键值同步与无损序列化回写。
+   - **文件夹递归比对**：支持“大小与时间”与“内容 SHA-256”两种模式、可取消扫描、进度回调与带 `.bak` 备份的安全文件复制。
+2. **四个 Beyond Compare 风格页面与模块注册**（`src/tools/compare/`）
+   - `folder_compare_page.{h,cpp}`：基于 `TaskRunner` 后台工作线程与 RAII 导航锁扫描本地目录，支持过滤（全部/仅差异/仅左/仅右）、双向文件同步，**双击差异文件自动识别 `.ini/.conf/.cfg` 或普通文本并跳转到对应对比页**。
+   - `text_compare_page.{h,cpp}`：带行号边栏的左右并排可编辑代码框、同步滚动、行级与字符级高亮、右侧差异概览缩略条、`仅差异` 行表切换、差异块导航/复制与 `.bak` 保存。
+   - `ini_compare_page.{h,cpp}`：左侧 `[Section]` 差异统计表 + 五圆点分割条 + 右侧节键差异明细表，支持原位编辑值、选中项左右同步与导出报告。
+   - `three_way_merge_page.{h,cpp}`：上方三栏（左侧 / 基线 / 右侧）源视图 + 下方冲突块列表与可直接编辑的合并输出区。
+   - `src/shell/icon_factory.cpp`、`src/shell/resources/theme.qss`、`src/tools/builtin_tools.cpp`：新增 `compare / folder / merge / save / swap / copy_right / copy_left` 七枚双色矢量图标，补充 `QPushButton:checked` 选中态样式，注册 `CompareTool`（`order = 15`）。
+3. **测试与文档**
+   - `tests/ui_tests.cpp`：新增 `compare_textDiffInlineAndHunkCopy`、`compare_threeWayMergeAndConflictResolve`、`compare_iniSectionKeyDiffAndPreserveComments`、`compare_folderDiffAndUiWorkflow` 四组单元与全窗口 UI 测试。
+   - `README.md`、`docs/ARCHITECTURE.md`、`docs/CHANGELOG.md`：同步更新模块说明与变更记录。
+
+### 麒麟实机验证结果（KylinSec OS 3.5 / GCC 10.3.1 / Qt 5.15.2）
+- `cmake --preset release && cmake --build --preset release`：`-Wall -Wextra -Wpedantic -Werror` 零警告通过。
+- `QT_QPA_PLATFORM=offscreen ctest --preset release`：`core_tests` **48/48**、`core_layering`、`ui_tests` **45/45** 全部通过。
+- 实机渲染核验文件夹、文本、INI、三方合并四页及顶栏新图标，排版与高亮无遮挡异常。
+
+---
+
+## 2026-11-27 · 第四批改进（commit `0503d6a`）
 
 **主题**：解除旧版左侧边栏与粗糙简笔画限制，按电力自动化工程工具视觉规范全面重构顶部大图标 Ribbon 栏、高精度双色/多色矢量图标库、左树右表网格工作区与常驻极简消息框
 

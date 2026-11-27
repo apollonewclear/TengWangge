@@ -16,6 +16,12 @@
 #include "shell/tool_registry.h"
 #include "shell/tool_view.h"
 #include "tools/builtin_tools.h"
+#include "tools/compare/compare_engine.h"
+#include "tools/compare/compare_tool.h"
+#include "tools/compare/folder_compare_page.h"
+#include "tools/compare/ini_compare_page.h"
+#include "tools/compare/text_compare_page.h"
+#include "tools/compare/three_way_merge_page.h"
 #include "tools/task_demo/task_demo_tool.h"
 
 #include <QApplication>
@@ -255,6 +261,12 @@ private slots:
     void builtin_taskDemoLocksAndReportsStatus();
     void builtin_taskDemoFailureAndCancel();
     void builtin_taskDemoShutdownMidRunReleasesLock();
+
+    // ---- 文件对比工具（Beyond Compare 风格）----
+    void compare_textDiffInlineAndHunkCopy();
+    void compare_threeWayMergeAndConflictResolve();
+    void compare_iniSectionKeyDiffAndPreserveComments();
+    void compare_folderDiffAndUiWorkflow();
 };
 
 // ---------------------------------------------------------------------------
@@ -1106,6 +1118,167 @@ void UiTests::builtin_taskDemoShutdownMidRunReleasesLock()
     window->toolHost()->shutdown();
     QVERIFY(!gate->isLocked());
     window.reset();
+}
+
+// ---------------------------------------------------------------------------
+
+void UiTests::compare_textDiffInlineAndHunkCopy()
+{
+    const QStringList left = {QStringLiteral("alpha = 1"), QStringLiteral("beta = 200"),
+                              QStringLiteral("only_left = true"), QStringLiteral("tail = ok")};
+    const QStringList right = {QStringLiteral("alpha = 1"), QStringLiteral("beta = 250"),
+                               QStringLiteral("tail = ok"), QStringLiteral("only_right = 9")};
+
+    const cmp::TextDiffResult res = cmp::diffLines(left, right);
+    QCOMPARE(res.equalCount, 2);
+    QCOMPARE(res.changedCount, 1);
+    QCOMPARE(res.leftOnlyCount, 1);
+    QCOMPARE(res.rightOnlyCount, 1);
+    QCOMPARE(res.hunks.size(), 2);
+
+    // 行内字符差异定位到 "0" vs "5"
+    QVERIFY(!res.rows.at(1).leftSpans.isEmpty());
+    QVERIFY(!res.rows.at(1).rightSpans.isEmpty());
+
+    // 将第一个差异块从左复制到右
+    const QStringList updatedRight = cmp::applyHunkToRight(left, right, res.hunks.at(0));
+    QCOMPARE(updatedRight.at(1), QStringLiteral("beta = 200"));
+    QCOMPARE(updatedRight.at(2), QStringLiteral("only_left = true"));
+
+    // 忽略空白与大小写
+    cmp::TextDiffOptions opt;
+    opt.ignoreWhitespace = true;
+    opt.ignoreCase = true;
+    const cmp::TextDiffResult fuzzy = cmp::diffLines({QStringLiteral("  Key = VAL ")},
+                                                     {QStringLiteral("key = val")}, opt);
+    QCOMPARE(fuzzy.hunks.size(), 0);
+
+    // 带 .bak 的安全保存
+    QTemporaryDir dir;
+    const QString fpath = dir.filePath(QStringLiteral("sample.txt"));
+    QString bak, err;
+    QVERIFY2(cmp::saveTextFileWithBackup(fpath, QStringLiteral("v1\n"), true, &bak, &err), qPrintable(err));
+    QVERIFY(bak.isEmpty()); // 首次保存无原文件
+    QVERIFY2(cmp::saveTextFileWithBackup(fpath, QStringLiteral("v2\n"), true, &bak, &err), qPrintable(err));
+    QVERIFY(!bak.isEmpty() && QFile::exists(bak));
+    QString bakText;
+    QVERIFY(cmp::loadTextFile(bak, &bakText));
+    QCOMPARE(bakText, QStringLiteral("v1\n"));
+}
+
+void UiTests::compare_threeWayMergeAndConflictResolve()
+{
+    const QStringList base = {QStringLiteral("line1"), QStringLiteral("a = 1"),
+                              QStringLiteral("b = 2"), QStringLiteral("c = 3")};
+    const QStringList left = {QStringLiteral("line1"), QStringLiteral("a = 10"),
+                              QStringLiteral("b = 20"), QStringLiteral("c = 3")};
+    const QStringList right = {QStringLiteral("line1"), QStringLiteral("a = 99"),
+                               QStringLiteral("b = 2"), QStringLiteral("c = 30")};
+
+    cmp::ThreeWayMergeResult res = cmp::mergeThreeWay(base, left, right);
+    QCOMPARE(res.conflictCount, 1);        // a = 10 vs a = 99
+    QVERIFY(res.autoMergedCount >= 1);     // c = 30 自动合并
+    QCOMPARE(res.unresolvedConflictCount(), 1);
+    QVERIFY(res.buildMergedText().contains(QStringLiteral("<<<<<<<")));
+
+    for (cmp::MergeChunk &c : res.chunks) {
+        if (c.kind == cmp::MergeChunkKind::Conflict)
+            c.resolution = cmp::MergeResolution::UseRight;
+    }
+    QCOMPARE(res.unresolvedConflictCount(), 0);
+    const QString merged = res.buildMergedText();
+    QVERIFY(merged.contains(QStringLiteral("a = 99")));
+    QVERIFY(merged.contains(QStringLiteral("c = 30")));
+    QVERIFY(!merged.contains(QStringLiteral("<<<<<<<")));
+}
+
+void UiTests::compare_iniSectionKeyDiffAndPreserveComments()
+{
+    const QString leftIni = QStringLiteral(
+        "# 顶部注释\n"
+        "[Global]\n"
+        "sync_interval = 5 ; 单位秒\n"
+        "only_left = 1\n");
+    const QString rightIni = QStringLiteral(
+        "# 顶部注释\n"
+        "[Global]\n"
+        "sync_interval = 10 ; 单位秒\n"
+        "only_right = 2\n");
+
+    cmp::IniDocument lDoc = cmp::parseIni(leftIni);
+    cmp::IniDocument rDoc = cmp::parseIni(rightIni);
+    const cmp::IniDiffResult diff = cmp::diffIni(lDoc, rDoc);
+    QCOMPARE(diff.changedCount, 1);
+    QCOMPARE(diff.leftOnlyCount, 1);
+    QCOMPARE(diff.rightOnlyCount, 1);
+
+    // 同步键值并保留原注释
+    rDoc.setValue(QStringLiteral("Global"), QStringLiteral("sync_interval"), QStringLiteral("5"));
+    const QString serialized = rDoc.serialize();
+    QVERIFY(serialized.contains(QStringLiteral("# 顶部注释")));
+    QVERIFY(serialized.contains(QStringLiteral("sync_interval = 5 ; 单位秒")));
+}
+
+void UiTests::compare_folderDiffAndUiWorkflow()
+{
+    QTemporaryDir dir;
+    const QString leftDir = dir.filePath(QStringLiteral("left"));
+    const QString rightDir = dir.filePath(QStringLiteral("right"));
+    QVERIFY(QDir().mkpath(leftDir + QStringLiteral("/conf")));
+    QVERIFY(QDir().mkpath(rightDir + QStringLiteral("/conf")));
+
+    QVERIFY(cmp::saveTextFileWithBackup(leftDir + QStringLiteral("/same.txt"), QStringLiteral("hello\n"), false));
+    QVERIFY(cmp::saveTextFileWithBackup(rightDir + QStringLiteral("/same.txt"), QStringLiteral("hello\n"), false));
+    QVERIFY(cmp::saveTextFileWithBackup(leftDir + QStringLiteral("/conf/sca_model_conf.ini"),
+                                        QStringLiteral("[Global]\nsync = 5\n"), false));
+    QVERIFY(cmp::saveTextFileWithBackup(rightDir + QStringLiteral("/conf/sca_model_conf.ini"),
+                                        QStringLiteral("[Global]\nsync = 10\n"), false));
+    QVERIFY(cmp::saveTextFileWithBackup(leftDir + QStringLiteral("/only_left.txt"), QStringLiteral("L\n"), false));
+    QVERIFY(cmp::saveTextFileWithBackup(rightDir + QStringLiteral("/only_right.txt"), QStringLiteral("R\n"), false));
+
+    cmp::FolderCompareOptions opts;
+    opts.mode = cmp::FolderCompareMode::ContentSha256;
+    const cmp::FolderCompareResult fres = cmp::compareFolders(leftDir, rightDir, opts);
+    QCOMPARE(fres.sameCount, 1);
+    QCOMPARE(fres.diffCount, 1);
+    QCOMPARE(fres.leftOnlyCount, 1);
+    QCOMPARE(fres.rightOnlyCount, 1);
+
+    // 通过完整 MainWindow 驱动 CompareTool 四个页面并截取关键状态图
+    ToolRegistry registry;
+    auto tool = std::make_unique<CompareTool>();
+    CompareTool *cmpTool = tool.get();
+    QVERIFY(registry.add(std::move(tool)));
+
+    auto platform = std::make_unique<PlatformServices>(DataPaths(dir.path() + QStringLiteral("/data")));
+    MainWindow window(std::move(platform), std::move(registry));
+    window.resize(1180, 740);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+    QVERIFY(cmpTool->folderPage() && cmpTool->textPage() && cmpTool->iniPage() && cmpTool->mergePage());
+    cmpTool->folderPage()->setDirectories(leftDir, rightDir);
+    cmpTool->folderPage()->compareSyncForTest();
+    QCOMPARE(cmpTool->folderPage()->result().entries.size(), 4);
+    shot(&window, QStringLiteral("compare-folder"));
+
+    QVERIFY(window.selectPageById(QStringLiteral("text")));
+    cmpTool->textPage()->loadSample();
+    QVERIFY(cmpTool->textPage()->diffResult().hunks.size() >= 1);
+    shot(&window, QStringLiteral("compare-text"));
+    QVERIFY(cmpTool->textPage()->copyCurrentHunkToRight());
+
+    QVERIFY(window.selectPageById(QStringLiteral("ini")));
+    cmpTool->iniPage()->loadSample();
+    QVERIFY(cmpTool->iniPage()->diffResult().changedCount >= 1);
+    shot(&window, QStringLiteral("compare-ini"));
+
+    QVERIFY(window.selectPageById(QStringLiteral("merge")));
+    cmpTool->mergePage()->loadSample();
+    QCOMPARE(cmpTool->mergePage()->mergeResult().unresolvedConflictCount(), 1);
+    shot(&window, QStringLiteral("compare-merge"));
+    cmpTool->mergePage()->resolveAllConflicts(cmp::MergeResolution::UseLeft);
+    QCOMPARE(cmpTool->mergePage()->mergeResult().unresolvedConflictCount(), 0);
 }
 
 QTEST_MAIN(UiTests)

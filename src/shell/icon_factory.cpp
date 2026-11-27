@@ -193,6 +193,74 @@ void drawGlyph32(QPainter &p, const QString &key, const QColor &color, const QCo
         p.setPen(accentPen);
         p.drawLine(QPointF(16.0, 20.5), QPointF(16.0, 5.2));
         p.drawPolyline(QPolygonF({QPointF(10.5, 10.5), QPointF(16.0, 4.8), QPointF(21.5, 10.5)}));
+    } else if (key == QLatin1String("compare")) {
+        // 对标工业双栏对比图标：左右并排文档框 + 中央蓝/橙双向对比箭头
+        p.setPen(mainPen);
+        p.drawRoundedRect(QRectF(3.5, 5.0, 10.5, 22.0), 2.0, 2.0);
+        p.drawRoundedRect(QRectF(18.0, 5.0, 10.5, 22.0), 2.0, 2.0);
+        p.drawLine(QPointF(6.2, 10.5), QPointF(11.2, 10.5));
+        p.drawLine(QPointF(20.8, 10.5), QPointF(25.8, 10.5));
+        p.setPen(accentPen);
+        p.drawLine(QPointF(6.2, 16.0), QPointF(11.2, 16.0));
+        p.drawLine(QPointF(20.8, 16.0), QPointF(25.8, 16.0));
+        p.drawLine(QPointF(11.5, 21.5), QPointF(20.5, 21.5));
+        p.drawPolyline(QPolygonF({QPointF(17.8, 19.0), QPointF(20.6, 21.5), QPointF(17.8, 24.0)}));
+    } else if (key == QLatin1String("folder")) {
+        p.setPen(mainPen);
+        QPainterPath tab;
+        tab.moveTo(4.0, 9.5);
+        tab.lineTo(4.0, 7.5);
+        tab.quadTo(4.0, 5.5, 6.0, 5.5);
+        tab.lineTo(13.0, 5.5);
+        tab.lineTo(15.5, 9.0);
+        tab.lineTo(26.0, 9.0);
+        tab.quadTo(28.0, 9.0, 28.0, 11.0);
+        tab.lineTo(28.0, 24.5);
+        tab.quadTo(28.0, 26.5, 26.0, 26.5);
+        tab.lineTo(6.0, 26.5);
+        tab.quadTo(4.0, 26.5, 4.0, 24.5);
+        tab.closeSubpath();
+        p.drawPath(tab);
+        p.setPen(accentPen);
+        p.drawLine(QPointF(8.0, 14.0), QPointF(24.0, 14.0));
+    } else if (key == QLatin1String("merge")) {
+        // 三方合并 Y 形汇聚箭头
+        p.setPen(mainPen);
+        p.drawEllipse(QPointF(8.5, 7.5), 3.0, 3.0);
+        p.drawEllipse(QPointF(16.0, 24.5), 3.0, 3.0);
+        QPainterPath leftBranch;
+        leftBranch.moveTo(8.5, 10.5);
+        leftBranch.quadTo(8.5, 17.0, 16.0, 17.5);
+        leftBranch.lineTo(16.0, 21.5);
+        p.drawPath(leftBranch);
+
+        p.setPen(accentPen);
+        p.drawEllipse(QPointF(23.5, 7.5), 3.0, 3.0);
+        QPainterPath rightBranch;
+        rightBranch.moveTo(23.5, 10.5);
+        rightBranch.quadTo(23.5, 17.0, 16.0, 17.5);
+        p.drawPath(rightBranch);
+    } else if (key == QLatin1String("save")) {
+        p.setPen(mainPen);
+        p.drawRoundedRect(QRectF(5.0, 5.0, 22.0, 22.0), 2.4, 2.4);
+        p.drawRect(QRectF(10.0, 5.0, 11.0, 7.5));
+        p.setPen(accentPen);
+        p.drawRoundedRect(QRectF(9.0, 17.0, 14.0, 10.0), 1.5, 1.5);
+    } else if (key == QLatin1String("swap")) {
+        p.setPen(mainPen);
+        p.drawLine(QPointF(6.0, 11.5), QPointF(25.5, 11.5));
+        p.drawPolyline(QPolygonF({QPointF(21.0, 7.5), QPointF(25.8, 11.5), QPointF(21.0, 15.5)}));
+        p.setPen(accentPen);
+        p.drawLine(QPointF(26.0, 20.5), QPointF(6.5, 20.5));
+        p.drawPolyline(QPolygonF({QPointF(11.0, 16.5), QPointF(6.2, 20.5), QPointF(11.0, 24.5)}));
+    } else if (key == QLatin1String("copy_right")) {
+        p.setPen(accentPen);
+        p.drawLine(QPointF(6.0, 16.0), QPointF(25.5, 16.0));
+        p.drawPolyline(QPolygonF({QPointF(19.0, 9.5), QPointF(25.8, 16.0), QPointF(19.0, 22.5)}));
+    } else if (key == QLatin1String("copy_left")) {
+        p.setPen(mainPen);
+        p.drawLine(QPointF(26.0, 16.0), QPointF(6.5, 16.0));
+        p.drawPolyline(QPolygonF({QPointF(13.0, 9.5), QPointF(6.2, 16.0), QPointF(13.0, 22.5)}));
     } else {
         p.drawRoundedRect(QRectF(5.0, 5.0, 22.0, 22.0), 4.0, 4.0);
     }
@@ -202,11 +270,14 @@ void drawGlyph32(QPainter &p, const QString &key, const QColor &color, const QCo
 
 QStringList IconFactory::knownKeys()
 {
-    return {QStringLiteral("overview"), QStringLiteral("task"),        QStringLiteral("status"),
-            QStringLiteral("scan"),     QStringLiteral("info"),        QStringLiteral("environment"),
-            QStringLiteral("log"),      QStringLiteral("lock"),        QStringLiteral("refresh"),
-            QStringLiteral("add"),      QStringLiteral("update"),      QStringLiteral("delete"),
-            QStringLiteral("help"),     QStringLiteral("exit"),        QStringLiteral("export")};
+    return {QStringLiteral("overview"),   QStringLiteral("task"),        QStringLiteral("status"),
+            QStringLiteral("scan"),       QStringLiteral("info"),        QStringLiteral("environment"),
+            QStringLiteral("log"),        QStringLiteral("lock"),        QStringLiteral("refresh"),
+            QStringLiteral("add"),        QStringLiteral("update"),      QStringLiteral("delete"),
+            QStringLiteral("help"),       QStringLiteral("exit"),        QStringLiteral("export"),
+            QStringLiteral("compare"),    QStringLiteral("folder"),      QStringLiteral("merge"),
+            QStringLiteral("save"),       QStringLiteral("swap"),        QStringLiteral("copy_right"),
+            QStringLiteral("copy_left")};
 }
 
 QPixmap IconFactory::pixmap(const QString &key, int size, const QColor &color,

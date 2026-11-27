@@ -13,6 +13,7 @@ function(tw_add_tool name)
 endfunction()
 
 add_subdirectory(welcome)
+add_subdirectory(compare)
 add_subdirectory(task_demo)
 add_subdirectory(sysinfo)
 

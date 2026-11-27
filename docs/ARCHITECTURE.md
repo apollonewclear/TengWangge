@@ -10,7 +10,7 @@
 │ src/app            可执行文件 TengWangge：命令行、组装、启动      │
 ├────────────────────────────────────────────────────────────────┤
 │ src/tools          内置工具（每个工具一个静态库 tw_tool_<名字>） │
-│   welcome  task_demo  sysinfo   +  builtin_tools.cpp（注册清单） │
+│   welcome  compare  task_demo  sysinfo + builtin_tools.cpp      │
 ├────────────────────────────────────────────────────────────────┤
 │ src/shell          Qt Widgets 外壳（静态库 tengwangge_shell）    │
 │   ITool  ToolRegistry  ToolHost  MainWindow  ToolRail  ToolView │
