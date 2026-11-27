@@ -266,6 +266,7 @@ private slots:
     void compare_textDiffInlineAndHunkCopy();
     void compare_threeWayMergeAndConflictResolve();
     void compare_iniSectionKeyDiffAndPreserveComments();
+    void compare_encodingAutoDetectAndHistory();
     void compare_folderDiffAndUiWorkflow();
 };
 
@@ -1219,6 +1220,45 @@ void UiTests::compare_iniSectionKeyDiffAndPreserveComments()
     QVERIFY(serialized.contains(QStringLiteral("sync_interval = 5 ; 单位秒")));
 }
 
+void UiTests::compare_encodingAutoDetectAndHistory()
+{
+    QTemporaryDir dir;
+    const QString chinese = QStringLiteral("# 麒麟变电站配置文件\nnode = 滕王阁一号机\n");
+
+    // 1. GB18030/GBK 写入 + Auto 自动探测读取无乱码
+    const QString gbkPath = dir.filePath(QStringLiteral("gbk_conf.ini"));
+    QString err;
+    QVERIFY2(cmp::saveTextFileWithBackup(gbkPath, chinese, false, nullptr, &err, cmp::TextEncoding::Gb18030),
+             qPrintable(err));
+    QString loaded;
+    cmp::TextEncoding detected = cmp::TextEncoding::Utf8;
+    QVERIFY2(cmp::loadTextFile(gbkPath, &loaded, &err, cmp::TextEncoding::Auto, &detected), qPrintable(err));
+    QCOMPARE(detected, cmp::TextEncoding::Gb18030);
+    QCOMPARE(loaded, chinese);
+
+    // 2. UTF-16 写入 + Auto 自动探测读取
+    const QString u16Path = dir.filePath(QStringLiteral("utf16_conf.ini"));
+    QVERIFY2(cmp::saveTextFileWithBackup(u16Path, chinese, false, nullptr, &err, cmp::TextEncoding::Utf16),
+             qPrintable(err));
+    QVERIFY2(cmp::loadTextFile(u16Path, &loaded, &err, cmp::TextEncoding::Auto, &detected), qPrintable(err));
+    QCOMPARE(detected, cmp::TextEncoding::Utf16);
+    QCOMPARE(loaded, chinese);
+
+    // 3. 历史记录去重、排序与上限截断
+    const QString dataDir = dir.path();
+    QVERIFY(cmp::recordCompareHistory(dataDir, QStringLiteral("text"), QStringLiteral("/a"), QStringLiteral("/b"), 2));
+    QVERIFY(cmp::recordCompareHistory(dataDir, QStringLiteral("text"), QStringLiteral("/c"), QStringLiteral("/d"), 2));
+    QVERIFY(cmp::recordCompareHistory(dataDir, QStringLiteral("text"), QStringLiteral("/a"), QStringLiteral("/b"), 2));
+    const auto hist = cmp::loadCompareHistory(dataDir, QStringLiteral("text"));
+    QCOMPARE(hist.size(), 2);
+    QCOMPARE(hist.at(0).leftPath, QStringLiteral("/a"));
+    QCOMPARE(hist.at(1).leftPath, QStringLiteral("/c"));
+
+    // 4. 忽略规则解析
+    const QStringList pats = cmp::parseIgnorePatterns(QStringLiteral(" .git ; *.bak, build "));
+    QCOMPARE(pats, (QStringList{QStringLiteral(".git"), QStringLiteral("*.bak"), QStringLiteral("build")}));
+}
+
 void UiTests::compare_folderDiffAndUiWorkflow()
 {
     QTemporaryDir dir;
@@ -1235,9 +1275,11 @@ void UiTests::compare_folderDiffAndUiWorkflow()
                                         QStringLiteral("[Global]\nsync = 10\n"), false));
     QVERIFY(cmp::saveTextFileWithBackup(leftDir + QStringLiteral("/only_left.txt"), QStringLiteral("L\n"), false));
     QVERIFY(cmp::saveTextFileWithBackup(rightDir + QStringLiteral("/only_right.txt"), QStringLiteral("R\n"), false));
+    QVERIFY(cmp::saveTextFileWithBackup(leftDir + QStringLiteral("/ignored.tmp"), QStringLiteral("X\n"), false));
 
     cmp::FolderCompareOptions opts;
     opts.mode = cmp::FolderCompareMode::ContentSha256;
+    opts.ignorePatterns = QStringList{QStringLiteral("*.tmp")};
     const cmp::FolderCompareResult fres = cmp::compareFolders(leftDir, rightDir, opts);
     QCOMPARE(fres.sameCount, 1);
     QCOMPARE(fres.diffCount, 1);
@@ -1258,13 +1300,23 @@ void UiTests::compare_folderDiffAndUiWorkflow()
 
     QVERIFY(cmpTool->folderPage() && cmpTool->textPage() && cmpTool->iniPage() && cmpTool->mergePage());
     cmpTool->folderPage()->setDirectories(leftDir, rightDir);
+    cmpTool->folderPage()->setIgnorePatternsText(QStringLiteral(".git;*.bak;*.tmp"));
     cmpTool->folderPage()->compareSyncForTest();
     QCOMPARE(cmpTool->folderPage()->result().entries.size(), 4);
     shot(&window, QStringLiteral("compare-folder"));
 
+    // 切换树形视图并验证目录节点构建
+    cmpTool->folderPage()->setTreeViewMode(true);
+    QVERIFY(cmpTool->folderPage()->isTreeViewMode());
+    shot(&window, QStringLiteral("compare-folder-tree"));
+
+    // 批量复制到右侧
+    QCOMPARE(cmpTool->folderPage()->copyEntriesToRight({1}), 1);
+
     QVERIFY(window.selectPageById(QStringLiteral("text")));
     cmpTool->textPage()->loadSample();
     QVERIFY(cmpTool->textPage()->diffResult().hunks.size() >= 1);
+    QVERIFY(cmpTool->textPage()->findInEditors(QStringLiteral("nuspV2")));
     shot(&window, QStringLiteral("compare-text"));
     QVERIFY(cmpTool->textPage()->copyCurrentHunkToRight());
 

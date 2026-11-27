@@ -5,16 +5,25 @@
 
 #include <QBrush>
 #include <QCheckBox>
+#include <QComboBox>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
+#include <QMimeData>
 #include <QPushButton>
+#include <QSet>
+#include <QShortcut>
 #include <QSplitter>
 #include <QTableWidget>
 #include <QTableWidgetItem>
+#include <QUrl>
 #include <QVBoxLayout>
 
 namespace tw {
@@ -38,6 +47,8 @@ IniComparePage::IniComparePage(const ToolServices &services, QWidget *parent)
     : QWidget(parent)
     , m_services(services)
 {
+    setAcceptDrops(true);
+
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(8, 6, 8, 4);
     root->setSpacing(5);
@@ -45,21 +56,30 @@ IniComparePage::IniComparePage(const ToolServices &services, QWidget *parent)
     // ---- 路径栏 ----
     auto *pathRow = new QHBoxLayout;
     pathRow->setContentsMargins(0, 0, 0, 0);
-    pathRow->setSpacing(6);
+    pathRow->setSpacing(5);
 
     m_leftPath = new QLineEdit;
-    m_leftPath->setPlaceholderText(QStringLiteral("左侧 INI/配置文件（如主服务器 sca_model_conf.ini）"));
+    m_leftPath->setPlaceholderText(QStringLiteral("左侧 INI/配置文件（支持拖放，如 sca_model_conf.ini）"));
     m_leftPath->setAccessibleName(QStringLiteral("左侧 INI 路径"));
     QPushButton *browseL = ui::makeActionButton(QStringLiteral("浏览"), QStringLiteral("folder"));
     QPushButton *saveL = ui::makeActionButton(QStringLiteral("保存左"), QStringLiteral("save"));
     QPushButton *swapBtn = ui::makeActionButton(QStringLiteral("交换"), QStringLiteral("swap"));
 
     m_rightPath = new QLineEdit;
-    m_rightPath->setPlaceholderText(QStringLiteral("右侧 INI/配置文件（如备服务器 sca_model_conf.ini）"));
+    m_rightPath->setPlaceholderText(QStringLiteral("右侧 INI/配置文件（支持拖放，如 sca_model_conf.ini）"));
     m_rightPath->setAccessibleName(QStringLiteral("右侧 INI 路径"));
     QPushButton *browseR = ui::makeActionButton(QStringLiteral("浏览"), QStringLiteral("folder"));
     QPushButton *saveR = ui::makeActionButton(QStringLiteral("保存右"), QStringLiteral("save"));
+
+    m_encodingCombo = new QComboBox;
+    m_encodingCombo->setToolTip(QStringLiteral("配置文件字符编码"));
+    m_encodingCombo->addItem(QStringLiteral("自动编码"), static_cast<int>(cmp::TextEncoding::Auto));
+    m_encodingCombo->addItem(QStringLiteral("UTF-8"), static_cast<int>(cmp::TextEncoding::Utf8));
+    m_encodingCombo->addItem(QStringLiteral("GB18030/GBK"), static_cast<int>(cmp::TextEncoding::Gb18030));
+    m_encodingCombo->addItem(QStringLiteral("UTF-16"), static_cast<int>(cmp::TextEncoding::Utf16));
+
     QPushButton *compareBtn = ui::makeActionButton(QStringLiteral("比较"), QStringLiteral("refresh"));
+    m_historyBtn = ui::makeActionButton(QStringLiteral("历史"), QStringLiteral("log"));
 
     pathRow->addWidget(ui::makeLabel(QStringLiteral("左:"), "fieldLabel"));
     pathRow->addWidget(m_leftPath, 1);
@@ -70,7 +90,9 @@ IniComparePage::IniComparePage(const ToolServices &services, QWidget *parent)
     pathRow->addWidget(m_rightPath, 1);
     pathRow->addWidget(browseR);
     pathRow->addWidget(saveR);
+    pathRow->addWidget(m_encodingCombo);
     pathRow->addWidget(compareBtn);
+    pathRow->addWidget(m_historyBtn);
     root->addLayout(pathRow);
 
     // ---- 过滤与同步工具栏 ----
@@ -154,6 +176,7 @@ IniComparePage::IniComparePage(const ToolServices &services, QWidget *parent)
                             QStringLiteral("左侧值"),
                             QStringLiteral("右侧值"),
                             QStringLiteral("状态")});
+    m_entryTable->setSelectionMode(QAbstractItemView::ExtendedSelection);
     m_entryTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
     m_entryTable->setColumnWidth(0, 48);
     m_entryTable->setColumnWidth(1, 130);
@@ -210,6 +233,36 @@ IniComparePage::IniComparePage(const ToolServices &services, QWidget *parent)
     connect(m_entryTable, &QTableWidget::cellDoubleClicked, this, [this](int, int) {
         editSelectedEntry();
     });
+    connect(m_historyBtn, &QPushButton::clicked, this, &IniComparePage::showHistoryMenu);
+    connect(m_encodingCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
+        const QString lp = m_leftPath->text().trimmed();
+        const QString rp = m_rightPath->text().trimmed();
+        if (!lp.isEmpty() && !rp.isEmpty() && QFileInfo::exists(lp) && QFileInfo::exists(rp)
+            && !m_leftDirty && !m_rightDirty) {
+            openFiles(lp, rp);
+        }
+    });
+
+    auto *saveSc = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_S), this);
+    saveSc->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(saveSc, &QShortcut::activated, this, [this]() {
+        if (m_leftDirty)
+            saveLeft();
+        if (m_rightDirty)
+            saveRight();
+    });
+}
+
+void IniComparePage::setEncoding(cmp::TextEncoding encoding)
+{
+    const int idx = m_encodingCombo->findData(static_cast<int>(encoding));
+    if (idx >= 0)
+        m_encodingCombo->setCurrentIndex(idx);
+}
+
+cmp::TextEncoding IniComparePage::selectedEncoding() const
+{
+    return static_cast<cmp::TextEncoding>(m_encodingCombo->currentData().toInt());
 }
 
 bool IniComparePage::openFiles(const QString &leftPath, const QString &rightPath)
@@ -217,21 +270,24 @@ bool IniComparePage::openFiles(const QString &leftPath, const QString &rightPath
     QString leftText;
     QString rightText;
     QString err;
-    if (!leftPath.isEmpty() && !cmp::loadTextFile(leftPath, &leftText, &err)) {
+    const cmp::TextEncoding req = selectedEncoding();
+    if (!leftPath.isEmpty() && !cmp::loadTextFile(leftPath, &leftText, &err, req, &m_leftDetectedEnc)) {
         m_services.logError(err);
         m_services.showStatus(StatusState::Error, err);
         return false;
     }
-    if (!rightPath.isEmpty() && !cmp::loadTextFile(rightPath, &rightText, &err)) {
+    if (!rightPath.isEmpty() && !cmp::loadTextFile(rightPath, &rightText, &err, req, &m_rightDetectedEnc)) {
         m_services.logError(err);
         m_services.showStatus(StatusState::Error, err);
         return false;
     }
     m_leftPath->setText(leftPath);
     m_rightPath->setText(rightPath);
+    cmp::recordCompareHistory(m_services.dataDir(), QStringLiteral("ini"), leftPath, rightPath);
     setContents(leftText, rightText, leftPath, rightPath);
-    m_services.logInfo(QStringLiteral("INI 配置对比完成：%1 ⇄ %2（值不同 %3，仅左 %4，仅右 %5）")
-                           .arg(leftPath, rightPath)
+    m_services.logInfo(QStringLiteral("INI 配置对比完成：%1 [%2] ⇄ %3 [%4]（值不同 %5，仅左 %6，仅右 %7）")
+                           .arg(leftPath, cmp::encodingDisplayName(m_leftDetectedEnc),
+                                rightPath, cmp::encodingDisplayName(m_rightDetectedEnc))
                            .arg(m_diff.changedCount)
                            .arg(m_diff.leftOnlyCount)
                            .arg(m_diff.rightOnlyCount));
@@ -417,43 +473,61 @@ void IniComparePage::rebuildEntryTable()
         m_entryTable->selectRow(0);
 }
 
+QVector<int> IniComparePage::selectedDiffIndices() const
+{
+    QSet<int> set;
+    for (const QModelIndex &mi : m_entryTable->selectionModel()->selectedRows()) {
+        if (QTableWidgetItem *it = m_entryTable->item(mi.row(), 0))
+            set.insert(it->data(Qt::UserRole).toInt());
+    }
+    QVector<int> out = set.values().toVector();
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
 int IniComparePage::selectedDiffIndex() const
 {
-    const int row = m_entryTable->currentRow();
-    if (row < 0 || !m_entryTable->item(row, 0))
-        return -1;
-    return m_entryTable->item(row, 0)->data(Qt::UserRole).toInt();
+    const QVector<int> list = selectedDiffIndices();
+    return list.isEmpty() ? -1 : list.first();
 }
 
 bool IniComparePage::copySelectedToRight()
 {
-    const int idx = selectedDiffIndex();
-    if (idx < 0 || idx >= m_diff.entries.size())
+    const QVector<int> indices = selectedDiffIndices();
+    if (indices.isEmpty())
         return false;
-    const cmp::IniDiffEntry &e = m_diff.entries.at(idx);
-    if (e.kind == cmp::IniDiffKind::RightOnly)
-        m_rightDoc.removeKey(e.section, e.key, m_ignoreCase->isChecked());
-    else
-        m_rightDoc.setValue(e.section, e.key, e.leftValue, m_ignoreCase->isChecked());
+    for (int idx : indices) {
+        if (idx < 0 || idx >= m_diff.entries.size())
+            continue;
+        const cmp::IniDiffEntry &e = m_diff.entries.at(idx);
+        if (e.kind == cmp::IniDiffKind::RightOnly)
+            m_rightDoc.removeKey(e.section, e.key, m_ignoreCase->isChecked());
+        else
+            m_rightDoc.setValue(e.section, e.key, e.leftValue, m_ignoreCase->isChecked());
+    }
     m_rightDirty = true;
     recompare();
-    m_services.logInfo(QStringLiteral("已同步配置项 [%1] %2：左 → 右").arg(e.section, e.key));
+    m_services.logInfo(QStringLiteral("已批量同步 %1 项 INI 配置：左 → 右").arg(indices.size()));
     return true;
 }
 
 bool IniComparePage::copySelectedToLeft()
 {
-    const int idx = selectedDiffIndex();
-    if (idx < 0 || idx >= m_diff.entries.size())
+    const QVector<int> indices = selectedDiffIndices();
+    if (indices.isEmpty())
         return false;
-    const cmp::IniDiffEntry &e = m_diff.entries.at(idx);
-    if (e.kind == cmp::IniDiffKind::LeftOnly)
-        m_leftDoc.removeKey(e.section, e.key, m_ignoreCase->isChecked());
-    else
-        m_leftDoc.setValue(e.section, e.key, e.rightValue, m_ignoreCase->isChecked());
+    for (int idx : indices) {
+        if (idx < 0 || idx >= m_diff.entries.size())
+            continue;
+        const cmp::IniDiffEntry &e = m_diff.entries.at(idx);
+        if (e.kind == cmp::IniDiffKind::LeftOnly)
+            m_leftDoc.removeKey(e.section, e.key, m_ignoreCase->isChecked());
+        else
+            m_leftDoc.setValue(e.section, e.key, e.rightValue, m_ignoreCase->isChecked());
+    }
     m_leftDirty = true;
     recompare();
-    m_services.logInfo(QStringLiteral("已同步配置项 [%1] %2：右 → 左").arg(e.section, e.key));
+    m_services.logInfo(QStringLiteral("已批量同步 %1 项 INI 配置：右 → 左").arg(indices.size()));
     return true;
 }
 
@@ -499,9 +573,12 @@ bool IniComparePage::saveLeft(QString *error)
             return false;
         m_leftPath->setText(path);
     }
+    const cmp::TextEncoding saveEnc = (selectedEncoding() == cmp::TextEncoding::Auto)
+        ? m_leftDetectedEnc
+        : selectedEncoding();
     QString bak;
     QString err;
-    if (!cmp::saveTextFileWithBackup(path, m_leftDoc.serialize(), m_autoBackup->isChecked(), &bak, &err)) {
+    if (!cmp::saveTextFileWithBackup(path, m_leftDoc.serialize(), m_autoBackup->isChecked(), &bak, &err, saveEnc)) {
         if (error)
             *error = err;
         m_services.logError(err);
@@ -510,8 +587,9 @@ bool IniComparePage::saveLeft(QString *error)
     }
     m_leftDirty = false;
     const QString msg = bak.isEmpty()
-        ? QStringLiteral("已保存左侧 INI：%1").arg(path)
-        : QStringLiteral("已保存左侧 INI：%1（自动备份：%2）").arg(path, bak);
+        ? QStringLiteral("已保存左侧 INI：%1 [%2]").arg(path, cmp::encodingDisplayName(saveEnc))
+        : QStringLiteral("已保存左侧 INI：%1 [%2]（备份：%3）")
+              .arg(path, cmp::encodingDisplayName(saveEnc), bak);
     m_services.logSuccess(msg);
     m_services.showStatus(StatusState::Success, msg);
     return true;
@@ -526,9 +604,12 @@ bool IniComparePage::saveRight(QString *error)
             return false;
         m_rightPath->setText(path);
     }
+    const cmp::TextEncoding saveEnc = (selectedEncoding() == cmp::TextEncoding::Auto)
+        ? m_rightDetectedEnc
+        : selectedEncoding();
     QString bak;
     QString err;
-    if (!cmp::saveTextFileWithBackup(path, m_rightDoc.serialize(), m_autoBackup->isChecked(), &bak, &err)) {
+    if (!cmp::saveTextFileWithBackup(path, m_rightDoc.serialize(), m_autoBackup->isChecked(), &bak, &err, saveEnc)) {
         if (error)
             *error = err;
         m_services.logError(err);
@@ -537,11 +618,73 @@ bool IniComparePage::saveRight(QString *error)
     }
     m_rightDirty = false;
     const QString msg = bak.isEmpty()
-        ? QStringLiteral("已保存右侧 INI：%1").arg(path)
-        : QStringLiteral("已保存右侧 INI：%1（自动备份：%2）").arg(path, bak);
+        ? QStringLiteral("已保存右侧 INI：%1 [%2]").arg(path, cmp::encodingDisplayName(saveEnc))
+        : QStringLiteral("已保存右侧 INI：%1 [%2]（备份：%3）")
+              .arg(path, cmp::encodingDisplayName(saveEnc), bak);
     m_services.logSuccess(msg);
     m_services.showStatus(StatusState::Success, msg);
     return true;
+}
+
+void IniComparePage::showHistoryMenu()
+{
+    const QVector<cmp::CompareHistoryItem> items =
+        cmp::loadCompareHistory(m_services.dataDir(), QStringLiteral("ini"));
+    QMenu menu(this);
+    if (items.isEmpty()) {
+        QAction *empty = menu.addAction(QStringLiteral("暂无历史对比记录"));
+        empty->setEnabled(false);
+    } else {
+        for (const cmp::CompareHistoryItem &it : items) {
+            QAction *act = menu.addAction(QStringLiteral("%1  ⇄  %2").arg(it.leftPath, it.rightPath));
+            connect(act, &QAction::triggered, this, [this, it]() {
+                openFiles(it.leftPath, it.rightPath);
+            });
+        }
+    }
+    menu.exec(m_historyBtn->mapToGlobal(QPoint(0, m_historyBtn->height())));
+}
+
+void IniComparePage::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (event->mimeData()->hasUrls())
+        event->acceptProposedAction();
+}
+
+void IniComparePage::dropEvent(QDropEvent *event)
+{
+    QStringList files;
+    for (const QUrl &u : event->mimeData()->urls()) {
+        if (!u.isLocalFile())
+            continue;
+        const QString p = u.toLocalFile();
+        if (QFileInfo(p).isFile())
+            files.append(p);
+    }
+    if (files.isEmpty())
+        return;
+    if (files.size() >= 2) {
+        openFiles(files.at(0), files.at(1));
+    } else {
+        QString text, err;
+        cmp::TextEncoding det = cmp::TextEncoding::Utf8;
+        if (!cmp::loadTextFile(files.at(0), &text, &err, selectedEncoding(), &det)) {
+            m_services.logError(err);
+            return;
+        }
+        if (event->pos().x() < width() / 2) {
+            m_leftPath->setText(files.at(0));
+            m_leftDoc = cmp::parseIni(text);
+            m_leftDetectedEnc = det;
+            m_leftDirty = false;
+        } else {
+            m_rightPath->setText(files.at(0));
+            m_rightDoc = cmp::parseIni(text);
+            m_rightDetectedEnc = det;
+            m_rightDirty = false;
+        }
+        recompare();
+    }
 }
 
 void IniComparePage::browseLeft()
@@ -553,7 +696,7 @@ void IniComparePage::browseLeft()
         return;
     QString text;
     QString err;
-    if (!cmp::loadTextFile(path, &text, &err)) {
+    if (!cmp::loadTextFile(path, &text, &err, selectedEncoding(), &m_leftDetectedEnc)) {
         m_services.logError(err);
         m_services.showStatus(StatusState::Error, err);
         return;
@@ -573,7 +716,7 @@ void IniComparePage::browseRight()
         return;
     QString text;
     QString err;
-    if (!cmp::loadTextFile(path, &text, &err)) {
+    if (!cmp::loadTextFile(path, &text, &err, selectedEncoding(), &m_rightDetectedEnc)) {
         m_services.logError(err);
         m_services.showStatus(StatusState::Error, err);
         return;
@@ -591,6 +734,7 @@ void IniComparePage::swapSides()
     m_rightPath->setText(lp);
     std::swap(m_leftDoc, m_rightDoc);
     std::swap(m_leftDirty, m_rightDirty);
+    std::swap(m_leftDetectedEnc, m_rightDetectedEnc);
     recompare();
 }
 

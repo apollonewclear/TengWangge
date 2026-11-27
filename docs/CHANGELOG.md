@@ -4,7 +4,38 @@
 
 ---
 
-## 2026-11-27 · 第五批改进（新增 Beyond Compare 风格文件对比模块 `compare`）
+## 2026-11-27 · 第六批改进（文件对比模块专业增强：多编码探测、树形视图、快捷键与历史会话）
+
+**主题**：围绕麒麟电力现场高频使用场景，深度增强 `compare`（文件对比）模块的编码兼容、目录浏览、批量同步、文内检索与键盘效率
+
+### 修改前备份
+- **本地 Git 备份分支**：`backup/pre-compare-enhance-e3ed62b`
+- **本地归档**：`/Users/Apple/Desktop/work/code/gemini/backups/tengwangge_pre_compare_enhance_e3ed62b.{bundle,tar.gz}`
+- **麒麟远程备份**：`/home/nusp/TengWangge_backups/TengWangge_gemini_pre_compare_enhance_e3ed62b.tar.gz`
+
+### 主要改动
+1. **多字符编码自动探测与原编码无损回写**（`compare_engine.{h,cpp}`、`text_compare_page.{h,cpp}`、`ini_compare_page.{h,cpp}`）
+   - 新增 `TextEncoding`（`Auto` / `Utf8` / `Gb18030` / `Utf16`），支持 BOM 检测与严格 UTF-8 校验，非 UTF-8 文件自动回退 `GB18030/GBK`，彻底解决麒麟现场老配置文件中文乱码问题。
+   - 文本对比页与 INI 对比页新增编码下拉框，标题栏实时标注检测编码，保存时默认按原编码回写。
+2. **文件夹对比树形视图、多选批量同步、自定义忽略与拖放**（`folder_compare_page.{h,cpp}`）
+   - 新增「列表 / 树形」双视图切换，树形模式按目录层级折叠并自动在父目录行汇总子项差异计数（`差异 N` / `一致`）。
+   - 开启 `ExtendedSelection` 多选，支持一次性批量复制到右侧或左侧（覆盖前可选自动 `.bak` 备份）。
+   - 新增可编辑的忽略规则输入框（默认 `.git;*.bak;*.o;build`，分号/逗号分隔）与本地目录/文件拖放加载。
+3. **Beyond Compare 快捷键、文内查找与历史会话**
+   - 文本比较页支持 `F7`/`F8` 跳上一处/下一处差异、`Alt+←/→` 当前块双向复制、`Ctrl+F` 聚焦文内查找框（左右同步定位）、`Ctrl+S` 保存。
+   - 三方合并页支持 `F7`/`F8` 跳冲突、`Ctrl+S` 保存合并结果；INI 配置比较页支持多行批量同步与 `Ctrl+S` 保存。
+   - 隔离目录 `<dataDir>/compare_history.json`（`0600` 权限）持久化最近 10 组对比路径，各页顶栏「历史」按钮一键回溯。
+4. **自动化测试**
+   - `tests/ui_tests.cpp`：新增 `compare_encodingAutoDetectAndHistory`（验证 GB18030/UTF-16 读写探测、历史去重与忽略规则解析），并扩展 `compare_folderDiffAndUiWorkflow` 覆盖树形视图、批量复制与文内查找。
+
+### 麒麟实机验证结果（KylinSec OS 3.5 / GCC 10.3.1 / Qt 5.15.2）
+- `cmake --build --preset release`：`-Wall -Wextra -Wpedantic -Werror` 零警告通过。
+- `QT_QPA_PLATFORM=offscreen ctest --preset release`：`core_tests` **48/48**、`core_layering`、`ui_tests` **46/46** 全部通过。
+- 实机渲染核验文件夹树形视图、文本编码/查找高亮与 INI 编码切换界面，排版清晰无横向滚动条溢出。
+
+---
+
+## 2026-11-27 · 第五批改进（commit `e3ed62b`）
 
 **主题**：上线首个正式业务工具模块 `compare`（文件对比），覆盖本地文件夹递归对比、文本并排编辑对比、INI/配置文件按节键核对与 Base/Left/Right 三方合并
 

@@ -13,6 +13,7 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QShortcut>
 #include <QSplitter>
 #include <QTableWidget>
 #include <QTableWidgetItem>
@@ -264,6 +265,15 @@ ThreeWayMergePage::ThreeWayMergePage(const ToolServices &services, QWidget *pare
         if (!m_suppressOutputSignal)
             m_outputManuallyEdited = true;
     });
+
+    auto bind = [this](const QKeySequence &seq, const std::function<void()> &fn) {
+        auto *sc = new QShortcut(seq, this);
+        sc->setContext(Qt::WidgetWithChildrenShortcut);
+        connect(sc, &QShortcut::activated, this, fn);
+    };
+    bind(QKeySequence(Qt::Key_F7), [this]() { prevConflict(); });
+    bind(QKeySequence(Qt::Key_F8), [this]() { nextConflict(); });
+    bind(QKeySequence(Qt::CTRL + Qt::Key_S), [this]() { saveOutput(); });
 }
 
 bool ThreeWayMergePage::openFiles(const QString &basePath, const QString &leftPath,

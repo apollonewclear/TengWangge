@@ -3,9 +3,13 @@
 #include "core/platform_services.h"
 #include "tools/compare/compare_engine.h"
 
+#include <QVector>
 #include <QWidget>
 
 class QCheckBox;
+class QComboBox;
+class QDragEnterEvent;
+class QDropEvent;
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -14,7 +18,7 @@ class QTableWidget;
 namespace tw {
 
 // INI / 配置文件按节键比较页（适配 sca_model_conf.ini 等多服务器配置核对）：
-// 左侧 [Section] 统计表 + 五圆点分割条 + 右侧节键差异明细表 + 选中项左右同步与原位编辑。
+// 左侧 [Section] 统计表 + 五圆点分割条 + 右侧节键差异明细表 + 多选批量同步 + 编码探测切换 + 历史与拖放。
 class IniComparePage : public QWidget
 {
     Q_OBJECT
@@ -27,6 +31,9 @@ public:
                      const QString &leftLabel = QString(), const QString &rightLabel = QString());
     void loadSample();
 
+    void setEncoding(cmp::TextEncoding encoding);
+    cmp::TextEncoding selectedEncoding() const;
+
     void recompare();
     bool copySelectedToRight();
     bool copySelectedToLeft();
@@ -37,17 +44,23 @@ public:
     const cmp::IniDocument &leftDocument() const { return m_leftDoc; }
     const cmp::IniDocument &rightDocument() const { return m_rightDoc; }
 
+protected:
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
+
 private:
     enum class FilterMode { All, DiffOnly, LeftOnly, RightOnly };
 
     void browseLeft();
     void browseRight();
     void swapSides();
+    void showHistoryMenu();
     void editSelectedEntry();
     void exportReport();
     void rebuildSectionTable();
     void rebuildEntryTable();
     void setFilterMode(FilterMode mode);
+    QVector<int> selectedDiffIndices() const;
     int selectedDiffIndex() const;
 
     ToolServices m_services;
@@ -57,9 +70,13 @@ private:
     FilterMode m_filter = FilterMode::All;
     bool m_leftDirty = false;
     bool m_rightDirty = false;
+    cmp::TextEncoding m_leftDetectedEnc = cmp::TextEncoding::Utf8;
+    cmp::TextEncoding m_rightDetectedEnc = cmp::TextEncoding::Utf8;
 
     QLineEdit *m_leftPath = nullptr;
     QLineEdit *m_rightPath = nullptr;
+    QComboBox *m_encodingCombo = nullptr;
+    QPushButton *m_historyBtn = nullptr;
     QPushButton *m_filterAllBtn = nullptr;
     QPushButton *m_filterDiffBtn = nullptr;
     QPushButton *m_filterLeftBtn = nullptr;

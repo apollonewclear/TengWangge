@@ -6,15 +6,22 @@
 #include <QBrush>
 #include <QCheckBox>
 #include <QColor>
+#include <QComboBox>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
 #include <QScrollBar>
+#include <QShortcut>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QTableWidget>
@@ -23,6 +30,7 @@
 #include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 
 namespace tw {
@@ -68,8 +76,7 @@ public:
         const QTextBlock blk = document()->findBlockByNumber(lineNo1Based - 1);
         if (!blk.isValid())
             return;
-        QTextCursor cur(blk);
-        setTextCursor(cur);
+        setTextCursor(QTextCursor(blk));
         centerCursor();
     }
 
@@ -144,7 +151,7 @@ private:
 };
 
 // ============================================================================
-// 中央差异缩略条（参考 Beyond Compare 概览柱）
+// 中央差异缩略条
 // ============================================================================
 
 class DiffOverviewBar final : public QWidget
@@ -241,6 +248,7 @@ TextComparePage::TextComparePage(const ToolServices &services, QWidget *parent)
     , m_services(services)
     , m_recompareTimer(new QTimer(this))
 {
+    setAcceptDrops(true);
     m_recompareTimer->setSingleShot(true);
     m_recompareTimer->setInterval(260);
     connect(m_recompareTimer, &QTimer::timeout, this, &TextComparePage::recompare);
@@ -249,26 +257,33 @@ TextComparePage::TextComparePage(const ToolServices &services, QWidget *parent)
     root->setContentsMargins(8, 6, 8, 4);
     root->setSpacing(5);
 
-    // ---- 路径栏 ----
+    // ---- 路径与编码栏 ----
     auto *pathRow = new QHBoxLayout;
     pathRow->setContentsMargins(0, 0, 0, 0);
-    pathRow->setSpacing(6);
+    pathRow->setSpacing(5);
 
     m_leftPath = new QLineEdit;
-    m_leftPath->setPlaceholderText(QStringLiteral("左侧本地文件路径（也可直接编辑内容）"));
+    m_leftPath->setPlaceholderText(QStringLiteral("左侧本地文件路径（支持拖放或直接编辑）"));
     m_leftPath->setAccessibleName(QStringLiteral("左侧文件路径"));
     QPushButton *browseL = ui::makeActionButton(QStringLiteral("浏览"), QStringLiteral("folder"));
     m_saveLeftBtn = ui::makeActionButton(QStringLiteral("保存左"), QStringLiteral("save"));
-
     QPushButton *swapBtn = ui::makeActionButton(QStringLiteral("交换"), QStringLiteral("swap"));
 
     m_rightPath = new QLineEdit;
-    m_rightPath->setPlaceholderText(QStringLiteral("右侧本地文件路径（也可直接编辑内容）"));
+    m_rightPath->setPlaceholderText(QStringLiteral("右侧本地文件路径（支持拖放或直接编辑）"));
     m_rightPath->setAccessibleName(QStringLiteral("右侧文件路径"));
     QPushButton *browseR = ui::makeActionButton(QStringLiteral("浏览"), QStringLiteral("folder"));
     m_saveRightBtn = ui::makeActionButton(QStringLiteral("保存右"), QStringLiteral("save"));
 
+    m_encodingCombo = new QComboBox;
+    m_encodingCombo->setToolTip(QStringLiteral("文件读取与保存字符编码"));
+    m_encodingCombo->addItem(QStringLiteral("自动编码"), static_cast<int>(cmp::TextEncoding::Auto));
+    m_encodingCombo->addItem(QStringLiteral("UTF-8"), static_cast<int>(cmp::TextEncoding::Utf8));
+    m_encodingCombo->addItem(QStringLiteral("GB18030/GBK"), static_cast<int>(cmp::TextEncoding::Gb18030));
+    m_encodingCombo->addItem(QStringLiteral("UTF-16"), static_cast<int>(cmp::TextEncoding::Utf16));
+
     QPushButton *compareBtn = ui::makeActionButton(QStringLiteral("比较"), QStringLiteral("refresh"));
+    m_historyBtn = ui::makeActionButton(QStringLiteral("历史"), QStringLiteral("log"));
 
     pathRow->addWidget(ui::makeLabel(QStringLiteral("左:"), "fieldLabel"));
     pathRow->addWidget(m_leftPath, 1);
@@ -279,50 +294,61 @@ TextComparePage::TextComparePage(const ToolServices &services, QWidget *parent)
     pathRow->addWidget(m_rightPath, 1);
     pathRow->addWidget(browseR);
     pathRow->addWidget(m_saveRightBtn);
+    pathRow->addWidget(m_encodingCombo);
     pathRow->addWidget(compareBtn);
+    pathRow->addWidget(m_historyBtn);
     root->addLayout(pathRow);
 
-    // ---- 操作工具栏 ----
+    // ---- 操作与文内查找工具栏 ----
     auto *actionRow = new QHBoxLayout;
     actionRow->setContentsMargins(0, 0, 0, 0);
-    actionRow->setSpacing(6);
+    actionRow->setSpacing(5);
 
-    m_modeAllBtn = new QPushButton(QStringLiteral("全部 (并排编辑)"));
+    m_modeAllBtn = new QPushButton(QStringLiteral("并排编辑"));
     m_modeAllBtn->setCheckable(true);
     m_modeAllBtn->setChecked(true);
     m_modeDiffBtn = new QPushButton(QStringLiteral("仅差异"));
     m_modeDiffBtn->setCheckable(true);
 
     m_prevBtn = ui::makeActionButton(QStringLiteral("上一处"), QStringLiteral("update"));
+    m_prevBtn->setToolTip(QStringLiteral("上一处差异 (F7)"));
     m_nextBtn = ui::makeActionButton(QStringLiteral("下一处"), QStringLiteral("compare"));
-    m_hunkLabel = ui::makeLabel(QStringLiteral("0 / 0 差异块"), "code");
+    m_nextBtn->setToolTip(QStringLiteral("下一处差异 (F8)"));
+    m_hunkLabel = ui::makeLabel(QStringLiteral("0 / 0"), "code");
     m_hunkLabel->setWordWrap(false);
 
-    m_copyRightBtn = ui::makeActionButton(QStringLiteral("当前块 → 右"), QStringLiteral("copy_right"));
-    m_copyLeftBtn = ui::makeActionButton(QStringLiteral("当前块 ← 左"), QStringLiteral("copy_left"));
+    m_copyRightBtn = ui::makeActionButton(QStringLiteral("块 → 右"), QStringLiteral("copy_right"));
+    m_copyRightBtn->setToolTip(QStringLiteral("复制当前差异块到右侧 (Alt+→)"));
+    m_copyLeftBtn = ui::makeActionButton(QStringLiteral("块 ← 左"), QStringLiteral("copy_left"));
+    m_copyLeftBtn->setToolTip(QStringLiteral("复制当前差异块到左侧 (Alt+←)"));
 
     m_ignoreWs = new QCheckBox(QStringLiteral("忽略空白"));
     m_ignoreCase = new QCheckBox(QStringLiteral("忽略大小写"));
-    m_autoBackup = new QCheckBox(QStringLiteral("保存前 .bak"));
+    m_autoBackup = new QCheckBox(QStringLiteral(".bak"));
+    m_autoBackup->setToolTip(QStringLiteral("保存修改前自动生成 .bak 备份"));
     m_autoBackup->setChecked(true);
+
+    m_findEdit = new QLineEdit;
+    m_findEdit->setPlaceholderText(QStringLiteral("文内查找 (Ctrl+F)..."));
+    m_findEdit->setClearButtonEnabled(true);
+    m_findEdit->setFixedWidth(155);
+    m_findEdit->setAccessibleName(QStringLiteral("文内查找输入框"));
 
     QPushButton *sampleBtn = ui::makeActionButton(QStringLiteral("示例"), QStringLiteral("add"));
     QPushButton *exportBtn = ui::makeActionButton(QStringLiteral("导出"), QStringLiteral("export"));
 
     actionRow->addWidget(m_modeAllBtn);
     actionRow->addWidget(m_modeDiffBtn);
-    actionRow->addSpacing(4);
     actionRow->addWidget(m_prevBtn);
     actionRow->addWidget(m_nextBtn);
     actionRow->addWidget(m_hunkLabel);
-    actionRow->addSpacing(4);
     actionRow->addWidget(m_copyRightBtn);
     actionRow->addWidget(m_copyLeftBtn);
-    actionRow->addSpacing(4);
     actionRow->addWidget(m_ignoreWs);
     actionRow->addWidget(m_ignoreCase);
     actionRow->addWidget(m_autoBackup);
     actionRow->addStretch(1);
+    actionRow->addWidget(m_findEdit);
     actionRow->addWidget(sampleBtn);
     actionRow->addWidget(exportBtn);
     root->addLayout(actionRow);
@@ -410,10 +436,21 @@ TextComparePage::TextComparePage(const ToolServices &services, QWidget *parent)
     connect(m_saveLeftBtn, &QPushButton::clicked, this, [this]() { saveLeft(); });
     connect(m_saveRightBtn, &QPushButton::clicked, this, [this]() { saveRight(); });
     connect(swapBtn, &QPushButton::clicked, this, &TextComparePage::swapSides);
-    connect(compareBtn, &QPushButton::clicked, this, [this]() {
-        if (!m_leftPath->text().trimmed().isEmpty() && !m_rightPath->text().trimmed().isEmpty()
+    connect(m_historyBtn, &QPushButton::clicked, this, &TextComparePage::showHistoryMenu);
+    connect(m_encodingCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
+        const QString lp = m_leftPath->text().trimmed();
+        const QString rp = m_rightPath->text().trimmed();
+        if (!lp.isEmpty() && !rp.isEmpty() && QFileInfo::exists(lp) && QFileInfo::exists(rp)
             && !m_leftDirty && !m_rightDirty) {
-            openFiles(m_leftPath->text().trimmed(), m_rightPath->text().trimmed());
+            openFiles(lp, rp);
+        }
+    });
+    connect(compareBtn, &QPushButton::clicked, this, [this]() {
+        const QString lp = m_leftPath->text().trimmed();
+        const QString rp = m_rightPath->text().trimmed();
+        if (!lp.isEmpty() && !rp.isEmpty() && QFileInfo::exists(lp) && QFileInfo::exists(rp)
+            && !m_leftDirty && !m_rightDirty) {
+            openFiles(lp, rp);
         } else {
             recompare();
         }
@@ -437,6 +474,9 @@ TextComparePage::TextComparePage(const ToolServices &services, QWidget *parent)
     connect(m_copyLeftBtn, &QPushButton::clicked, this, [this]() { copyCurrentHunkToLeft(); });
     connect(m_ignoreWs, &QCheckBox::toggled, this, [this](bool) { recompare(); });
     connect(m_ignoreCase, &QCheckBox::toggled, this, [this](bool) { recompare(); });
+    connect(m_findEdit, &QLineEdit::returnPressed, this, [this]() {
+        findInEditors(m_findEdit->text());
+    });
     connect(sampleBtn, &QPushButton::clicked, this, &TextComparePage::loadSample);
     connect(exportBtn, &QPushButton::clicked, this, &TextComparePage::exportReport);
 
@@ -496,8 +536,44 @@ TextComparePage::TextComparePage(const ToolServices &services, QWidget *parent)
         jumpToHunk(hunkIdx);
     });
 
+    installShortcuts();
     updateHunkCounter();
     updateDirtyLabels();
+}
+
+void TextComparePage::installShortcuts()
+{
+    auto bind = [this](const QKeySequence &seq, const std::function<void()> &fn) {
+        auto *sc = new QShortcut(seq, this);
+        sc->setContext(Qt::WidgetWithChildrenShortcut);
+        connect(sc, &QShortcut::activated, this, fn);
+    };
+    bind(QKeySequence(Qt::Key_F7), [this]() { prevHunk(); });
+    bind(QKeySequence(Qt::Key_F8), [this]() { nextHunk(); });
+    bind(QKeySequence(Qt::ALT + Qt::Key_Right), [this]() { copyCurrentHunkToRight(); });
+    bind(QKeySequence(Qt::ALT + Qt::Key_Left), [this]() { copyCurrentHunkToLeft(); });
+    bind(QKeySequence(Qt::CTRL + Qt::Key_F), [this]() {
+        m_findEdit->setFocus();
+        m_findEdit->selectAll();
+    });
+    bind(QKeySequence(Qt::CTRL + Qt::Key_S), [this]() {
+        if (m_rightEditor->hasFocus() || (m_rightDirty && !m_leftDirty))
+            saveRight();
+        else if (m_leftDirty || m_leftEditor->hasFocus())
+            saveLeft();
+    });
+}
+
+void TextComparePage::setEncoding(cmp::TextEncoding encoding)
+{
+    const int idx = m_encodingCombo->findData(static_cast<int>(encoding));
+    if (idx >= 0)
+        m_encodingCombo->setCurrentIndex(idx);
+}
+
+cmp::TextEncoding TextComparePage::selectedEncoding() const
+{
+    return static_cast<cmp::TextEncoding>(m_encodingCombo->currentData().toInt());
 }
 
 bool TextComparePage::openFiles(const QString &leftPath, const QString &rightPath)
@@ -505,13 +581,14 @@ bool TextComparePage::openFiles(const QString &leftPath, const QString &rightPat
     QString leftContent;
     QString rightContent;
     QString err;
+    const cmp::TextEncoding req = selectedEncoding();
 
-    if (!leftPath.isEmpty() && !cmp::loadTextFile(leftPath, &leftContent, &err)) {
+    if (!leftPath.isEmpty() && !cmp::loadTextFile(leftPath, &leftContent, &err, req, &m_leftDetectedEnc)) {
         m_services.logError(err);
         m_services.showStatus(StatusState::Error, err);
         return false;
     }
-    if (!rightPath.isEmpty() && !cmp::loadTextFile(rightPath, &rightContent, &err)) {
+    if (!rightPath.isEmpty() && !cmp::loadTextFile(rightPath, &rightContent, &err, req, &m_rightDetectedEnc)) {
         m_services.logError(err);
         m_services.showStatus(StatusState::Error, err);
         return false;
@@ -519,9 +596,11 @@ bool TextComparePage::openFiles(const QString &leftPath, const QString &rightPat
 
     m_leftPath->setText(leftPath);
     m_rightPath->setText(rightPath);
+    cmp::recordCompareHistory(m_services.dataDir(), QStringLiteral("text"), leftPath, rightPath);
     setTexts(leftContent, rightContent, leftPath, rightPath);
-    m_services.logInfo(QStringLiteral("文本对比完成：%1 ⇄ %2（差异块 %3 处）")
-                           .arg(leftPath, rightPath)
+    m_services.logInfo(QStringLiteral("文本对比完成：%1 [%2] ⇄ %3 [%4]（差异块 %5 处）")
+                           .arg(leftPath, cmp::encodingDisplayName(m_leftDetectedEnc),
+                                rightPath, cmp::encodingDisplayName(m_rightDetectedEnc))
                            .arg(m_diff.hunks.size()));
     return true;
 }
@@ -563,8 +642,10 @@ void TextComparePage::loadSample()
         "retry_limit = 3\n"
         "log_level = INFO\n"
         "backup_retention_days = 7\n");
+    m_leftDetectedEnc = cmp::TextEncoding::Utf8;
+    m_rightDetectedEnc = cmp::TextEncoding::Utf8;
     setTexts(leftSample, rightSample, QStringLiteral("sample_left.conf"), QStringLiteral("sample_right.conf"));
-    m_services.showStatus(StatusState::Info, QStringLiteral("已载入文本对比示例，可直接编辑或复制差异块"));
+    m_services.showStatus(StatusState::Info, QStringLiteral("已载入文本对比示例（F7/F8 跳差异，Alt+←/→ 块复制，Ctrl+F 查找）"));
 }
 
 QString TextComparePage::leftText() const
@@ -575,6 +656,31 @@ QString TextComparePage::leftText() const
 QString TextComparePage::rightText() const
 {
     return m_rightEditor->toPlainText();
+}
+
+bool TextComparePage::findInEditors(const QString &keyword)
+{
+    const QString kw = keyword.trimmed();
+    if (kw.isEmpty())
+        return false;
+
+    auto findOrWrap = [&kw](DiffCodeEditor *ed) -> bool {
+        if (ed->find(kw))
+            return true;
+        QTextCursor c = ed->textCursor();
+        c.movePosition(QTextCursor::Start);
+        ed->setTextCursor(c);
+        return ed->find(kw);
+    };
+
+    const bool hitL = findOrWrap(m_leftEditor);
+    const bool hitR = findOrWrap(m_rightEditor);
+    if (hitL || hitR) {
+        m_services.showStatus(StatusState::Info, QStringLiteral("已定位查找关键字：“%1”").arg(kw));
+        return true;
+    }
+    m_services.showStatus(StatusState::Error, QStringLiteral("未找到关键字：“%1”").arg(kw));
+    return false;
 }
 
 void TextComparePage::recompare()
@@ -596,7 +702,7 @@ void TextComparePage::recompare()
     updateHunkCounter();
 
     m_services.showStatus(m_diff.hunks.isEmpty() ? StatusState::Success : StatusState::Info,
-                          QStringLiteral("文本比对：相同 %1 行，修改 %2 行，仅左 %3 行，仅右 %4 行（共 %5 处差异块）")
+                          QStringLiteral("文本比对：相同 %1 行，修改 %2 行，仅左 %3 行，仅右 %4 行（%5 处差异块）")
                               .arg(m_diff.equalCount)
                               .arg(m_diff.changedCount)
                               .arg(m_diff.leftOnlyCount)
@@ -724,16 +830,14 @@ void TextComparePage::prevHunk()
 {
     if (m_diff.hunks.isEmpty())
         return;
-    const int next = (m_currentHunk <= 0) ? (m_diff.hunks.size() - 1) : (m_currentHunk - 1);
-    jumpToHunk(next);
+    jumpToHunk((m_currentHunk <= 0) ? (m_diff.hunks.size() - 1) : (m_currentHunk - 1));
 }
 
 void TextComparePage::nextHunk()
 {
     if (m_diff.hunks.isEmpty())
         return;
-    const int next = (m_currentHunk + 1) % m_diff.hunks.size();
-    jumpToHunk(next);
+    jumpToHunk((m_currentHunk + 1) % m_diff.hunks.size());
 }
 
 bool TextComparePage::copyCurrentHunkToRight()
@@ -781,10 +885,12 @@ bool TextComparePage::saveLeft(QString *error)
             return false;
         m_leftPath->setText(path);
     }
-    QString bakPath;
-    QString err;
+    const cmp::TextEncoding saveEnc = (selectedEncoding() == cmp::TextEncoding::Auto)
+        ? m_leftDetectedEnc
+        : selectedEncoding();
+    QString bakPath, err;
     if (!cmp::saveTextFileWithBackup(path, m_leftEditor->toPlainText(), m_autoBackup->isChecked(),
-                                     &bakPath, &err)) {
+                                     &bakPath, &err, saveEnc)) {
         if (error)
             *error = err;
         m_services.logError(err);
@@ -794,8 +900,9 @@ bool TextComparePage::saveLeft(QString *error)
     m_leftDirty = false;
     updateDirtyLabels();
     const QString msg = bakPath.isEmpty()
-        ? QStringLiteral("已保存左侧文件：%1").arg(path)
-        : QStringLiteral("已保存左侧文件：%1（自动备份：%2）").arg(path, bakPath);
+        ? QStringLiteral("已保存左侧文件：%1 [%2]").arg(path, cmp::encodingDisplayName(saveEnc))
+        : QStringLiteral("已保存左侧文件：%1 [%2]（备份：%3）")
+              .arg(path, cmp::encodingDisplayName(saveEnc), bakPath);
     m_services.logSuccess(msg);
     m_services.showStatus(StatusState::Success, msg);
     return true;
@@ -810,10 +917,12 @@ bool TextComparePage::saveRight(QString *error)
             return false;
         m_rightPath->setText(path);
     }
-    QString bakPath;
-    QString err;
+    const cmp::TextEncoding saveEnc = (selectedEncoding() == cmp::TextEncoding::Auto)
+        ? m_rightDetectedEnc
+        : selectedEncoding();
+    QString bakPath, err;
     if (!cmp::saveTextFileWithBackup(path, m_rightEditor->toPlainText(), m_autoBackup->isChecked(),
-                                     &bakPath, &err)) {
+                                     &bakPath, &err, saveEnc)) {
         if (error)
             *error = err;
         m_services.logError(err);
@@ -823,22 +932,85 @@ bool TextComparePage::saveRight(QString *error)
     m_rightDirty = false;
     updateDirtyLabels();
     const QString msg = bakPath.isEmpty()
-        ? QStringLiteral("已保存右侧文件：%1").arg(path)
-        : QStringLiteral("已保存右侧文件：%1（自动备份：%2）").arg(path, bakPath);
+        ? QStringLiteral("已保存右侧文件：%1 [%2]").arg(path, cmp::encodingDisplayName(saveEnc))
+        : QStringLiteral("已保存右侧文件：%1 [%2]（备份：%3）")
+              .arg(path, cmp::encodingDisplayName(saveEnc), bakPath);
     m_services.logSuccess(msg);
     m_services.showStatus(StatusState::Success, msg);
     return true;
 }
 
+void TextComparePage::showHistoryMenu()
+{
+    const QVector<cmp::CompareHistoryItem> items =
+        cmp::loadCompareHistory(m_services.dataDir(), QStringLiteral("text"));
+    QMenu menu(this);
+    if (items.isEmpty()) {
+        QAction *empty = menu.addAction(QStringLiteral("暂无历史对比记录"));
+        empty->setEnabled(false);
+    } else {
+        for (const cmp::CompareHistoryItem &it : items) {
+            QAction *act = menu.addAction(QStringLiteral("%1  ⇄  %2").arg(it.leftPath, it.rightPath));
+            connect(act, &QAction::triggered, this, [this, it]() {
+                openFiles(it.leftPath, it.rightPath);
+            });
+        }
+    }
+    menu.exec(m_historyBtn->mapToGlobal(QPoint(0, m_historyBtn->height())));
+}
+
+void TextComparePage::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (event->mimeData()->hasUrls())
+        event->acceptProposedAction();
+}
+
+void TextComparePage::dropEvent(QDropEvent *event)
+{
+    QStringList files;
+    for (const QUrl &u : event->mimeData()->urls()) {
+        if (!u.isLocalFile())
+            continue;
+        const QString p = u.toLocalFile();
+        if (QFileInfo(p).isFile())
+            files.append(p);
+    }
+    if (files.isEmpty())
+        return;
+    if (files.size() >= 2) {
+        openFiles(files.at(0), files.at(1));
+    } else {
+        QString content, err;
+        cmp::TextEncoding det = cmp::TextEncoding::Utf8;
+        if (!cmp::loadTextFile(files.at(0), &content, &err, selectedEncoding(), &det)) {
+            m_services.logError(err);
+            return;
+        }
+        m_suppressEditSignal = true;
+        if (event->pos().x() < width() / 2) {
+            m_leftPath->setText(files.at(0));
+            m_leftEditor->setPlainText(content);
+            m_leftDetectedEnc = det;
+            m_leftDirty = false;
+        } else {
+            m_rightPath->setText(files.at(0));
+            m_rightEditor->setPlainText(content);
+            m_rightDetectedEnc = det;
+            m_rightDirty = false;
+        }
+        m_suppressEditSignal = false;
+        updateDirtyLabels();
+        recompare();
+    }
+}
+
 void TextComparePage::browseLeft()
 {
-    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("选择左侧文件"),
-                                                      m_leftPath->text());
+    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("选择左侧文件"), m_leftPath->text());
     if (path.isEmpty())
         return;
-    QString content;
-    QString err;
-    if (!cmp::loadTextFile(path, &content, &err)) {
+    QString content, err;
+    if (!cmp::loadTextFile(path, &content, &err, selectedEncoding(), &m_leftDetectedEnc)) {
         m_services.logError(err);
         m_services.showStatus(StatusState::Error, err);
         return;
@@ -854,13 +1026,11 @@ void TextComparePage::browseLeft()
 
 void TextComparePage::browseRight()
 {
-    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("选择右侧文件"),
-                                                      m_rightPath->text());
+    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("选择右侧文件"), m_rightPath->text());
     if (path.isEmpty())
         return;
-    QString content;
-    QString err;
-    if (!cmp::loadTextFile(path, &content, &err)) {
+    QString content, err;
+    if (!cmp::loadTextFile(path, &content, &err, selectedEncoding(), &m_rightDetectedEnc)) {
         m_services.logError(err);
         m_services.showStatus(StatusState::Error, err);
         return;
@@ -880,8 +1050,8 @@ void TextComparePage::swapSides()
     const QString rp = m_rightPath->text();
     const QString lt = m_leftEditor->toPlainText();
     const QString rt = m_rightEditor->toPlainText();
-    const bool ld = m_leftDirty;
-    const bool rd = m_rightDirty;
+    std::swap(m_leftDirty, m_rightDirty);
+    std::swap(m_leftDetectedEnc, m_rightDetectedEnc);
 
     m_leftPath->setText(rp);
     m_rightPath->setText(lp);
@@ -889,8 +1059,6 @@ void TextComparePage::swapSides()
     m_leftEditor->setPlainText(rt);
     m_rightEditor->setPlainText(lt);
     m_suppressEditSignal = false;
-    m_leftDirty = rd;
-    m_rightDirty = ld;
     updateDirtyLabels();
     recompare();
 }
@@ -920,7 +1088,7 @@ void TextComparePage::updateHunkCounter()
 {
     const int total = m_diff.hunks.size();
     const int cur = (total > 0 && m_currentHunk >= 0) ? (m_currentHunk + 1) : 0;
-    m_hunkLabel->setText(QStringLiteral("%1 / %2 差异块").arg(cur).arg(total));
+    m_hunkLabel->setText(QStringLiteral("%1 / %2").arg(cur).arg(total));
     const bool hasHunk = (total > 0);
     m_prevBtn->setEnabled(hasHunk);
     m_nextBtn->setEnabled(hasHunk);
@@ -932,8 +1100,14 @@ void TextComparePage::updateDirtyLabels()
 {
     const QString lName = m_leftPath->text().isEmpty() ? QStringLiteral("左侧文档") : m_leftPath->text();
     const QString rName = m_rightPath->text().isEmpty() ? QStringLiteral("右侧文档") : m_rightPath->text();
-    m_leftTitle->setText(m_leftDirty ? (lName + QStringLiteral(" *（未保存）")) : lName);
-    m_rightTitle->setText(m_rightDirty ? (rName + QStringLiteral(" *（未保存）")) : rName);
+    const QString lEnc = cmp::encodingDisplayName(m_leftDetectedEnc);
+    const QString rEnc = cmp::encodingDisplayName(m_rightDetectedEnc);
+    m_leftTitle->setText(m_leftDirty
+                             ? QStringLiteral("%1 [%2] *（未保存）").arg(lName, lEnc)
+                             : QStringLiteral("%1 [%2]").arg(lName, lEnc));
+    m_rightTitle->setText(m_rightDirty
+                              ? QStringLiteral("%1 [%2] *（未保存）").arg(rName, rEnc)
+                              : QStringLiteral("%1 [%2]").arg(rName, rEnc));
 }
 
 } // namespace tw

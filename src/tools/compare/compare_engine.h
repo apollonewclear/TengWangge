@@ -86,10 +86,42 @@ QStringList applyHunkToLeft(const QStringList &leftLines, const QStringList &rig
 QString formatTextDiffReport(const QString &leftLabel, const QString &rightLabel,
                              const TextDiffResult &diff);
 
-// 文件读写工具（支持保存前自动生成 .bak 备份）。
-bool loadTextFile(const QString &path, QString *content, QString *error = nullptr);
+// 文本编码支持（适配麒麟电力现场 UTF-8 / GB18030(GBK) / UTF-16 混合配置文件）。
+enum class TextEncoding
+{
+    Auto,
+    Utf8,
+    Gb18030,
+    Utf16
+};
+
+TextEncoding detectEncoding(const QByteArray &bytes);
+QString encodingDisplayName(TextEncoding enc);
+QString decodeBytes(const QByteArray &bytes, TextEncoding requested,
+                    TextEncoding *detected = nullptr);
+QByteArray encodeText(const QString &text, TextEncoding encoding);
+
+// 文件读写工具（支持自动编码探测、按指定编码回写及保存前自动生成 .bak 备份）。
+bool loadTextFile(const QString &path, QString *content, QString *error = nullptr,
+                  TextEncoding encoding = TextEncoding::Auto,
+                  TextEncoding *detectedEncoding = nullptr);
 bool saveTextFileWithBackup(const QString &path, const QString &content, bool createBackup,
-                            QString *backupPath = nullptr, QString *error = nullptr);
+                            QString *backupPath = nullptr, QString *error = nullptr,
+                            TextEncoding encoding = TextEncoding::Utf8);
+
+// 对比历史会话（持久化在工具隔离目录 <dataDir>/compare_history.json，权限 0600）。
+struct CompareHistoryItem
+{
+    QString leftPath;
+    QString rightPath;
+};
+
+QVector<CompareHistoryItem> loadCompareHistory(const QString &dataDir, const QString &category);
+bool recordCompareHistory(const QString &dataDir, const QString &category,
+                          const QString &leftPath, const QString &rightPath,
+                          int maxItems = 10);
+
+QStringList parseIgnorePatterns(const QString &rawText);
 
 // ============================================================================
 // 2. 三方合并（Base / Left / Right -> Output）

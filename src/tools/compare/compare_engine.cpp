@@ -6,9 +6,13 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMap>
 #include <QSaveFile>
 #include <QSet>
+#include <QTextCodec>
 #include <QTextStream>
 
 #include <algorithm>
@@ -462,7 +466,125 @@ QString formatTextDiffReport(const QString &leftLabel, const QString &rightLabel
     return report;
 }
 
-bool loadTextFile(const QString &path, QString *content, QString *error)
+namespace {
+
+bool isValidStrictUtf8(const QByteArray &bytes)
+{
+    const auto *data = reinterpret_cast<const unsigned char *>(bytes.constData());
+    const int len = bytes.size();
+    int i = 0;
+    while (i < len) {
+        const unsigned char c = data[i];
+        if (c <= 0x7F) {
+            ++i;
+        } else if ((c & 0xE0) == 0xC0) {
+            if (i + 1 >= len || (data[i + 1] & 0xC0) != 0x80 || c < 0xC2)
+                return false;
+            i += 2;
+        } else if ((c & 0xF0) == 0xE0) {
+            if (i + 2 >= len || (data[i + 1] & 0xC0) != 0x80 || (data[i + 2] & 0xC0) != 0x80)
+                return false;
+            if (c == 0xE0 && data[i + 1] < 0xA0)
+                return false;
+            if (c == 0xED && data[i + 1] >= 0xA0)
+                return false;
+            i += 3;
+        } else if ((c & 0xF8) == 0xF0) {
+            if (i + 3 >= len || (data[i + 1] & 0xC0) != 0x80 || (data[i + 2] & 0xC0) != 0x80
+                || (data[i + 3] & 0xC0) != 0x80)
+                return false;
+            if (c == 0xF0 && data[i + 1] < 0x90)
+                return false;
+            if (c > 0xF4 || (c == 0xF4 && data[i + 1] > 0x8F))
+                return false;
+            i += 4;
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
+QTextCodec *codecForEncoding(TextEncoding enc)
+{
+    switch (enc) {
+    case TextEncoding::Gb18030: {
+        QTextCodec *c = QTextCodec::codecForName("GB18030");
+        if (!c)
+            c = QTextCodec::codecForName("GBK");
+        return c ? c : QTextCodec::codecForName("UTF-8");
+    }
+    case TextEncoding::Utf16:
+        return QTextCodec::codecForName("UTF-16");
+    case TextEncoding::Auto:
+    case TextEncoding::Utf8:
+    default:
+        return QTextCodec::codecForName("UTF-8");
+    }
+}
+
+} // namespace
+
+TextEncoding detectEncoding(const QByteArray &bytes)
+{
+    if (bytes.size() >= 3
+        && static_cast<unsigned char>(bytes.at(0)) == 0xEF
+        && static_cast<unsigned char>(bytes.at(1)) == 0xBB
+        && static_cast<unsigned char>(bytes.at(2)) == 0xBF) {
+        return TextEncoding::Utf8;
+    }
+    if (bytes.size() >= 2) {
+        const unsigned char b0 = static_cast<unsigned char>(bytes.at(0));
+        const unsigned char b1 = static_cast<unsigned char>(bytes.at(1));
+        if ((b0 == 0xFF && b1 == 0xFE) || (b0 == 0xFE && b1 == 0xFF))
+            return TextEncoding::Utf16;
+    }
+    if (isValidStrictUtf8(bytes))
+        return TextEncoding::Utf8;
+    return TextEncoding::Gb18030;
+}
+
+QString encodingDisplayName(TextEncoding enc)
+{
+    switch (enc) {
+    case TextEncoding::Auto: return QStringLiteral("自动探测");
+    case TextEncoding::Utf8: return QStringLiteral("UTF-8");
+    case TextEncoding::Gb18030: return QStringLiteral("GB18030/GBK");
+    case TextEncoding::Utf16: return QStringLiteral("UTF-16");
+    }
+    return QStringLiteral("UTF-8");
+}
+
+QString decodeBytes(const QByteArray &bytes, TextEncoding requested, TextEncoding *detected)
+{
+    const TextEncoding actual = (requested == TextEncoding::Auto) ? detectEncoding(bytes) : requested;
+    if (detected)
+        *detected = actual;
+    if (actual == TextEncoding::Utf8) {
+        int offset = 0;
+        if (bytes.size() >= 3
+            && static_cast<unsigned char>(bytes.at(0)) == 0xEF
+            && static_cast<unsigned char>(bytes.at(1)) == 0xBB
+            && static_cast<unsigned char>(bytes.at(2)) == 0xBF) {
+            offset = 3;
+        }
+        return QString::fromUtf8(bytes.constData() + offset, bytes.size() - offset);
+    }
+    QTextCodec *codec = codecForEncoding(actual);
+    return codec ? codec->toUnicode(bytes) : QString::fromUtf8(bytes);
+}
+
+QByteArray encodeText(const QString &text, TextEncoding encoding)
+{
+    const TextEncoding actual = (encoding == TextEncoding::Auto) ? TextEncoding::Utf8 : encoding;
+    if (actual == TextEncoding::Utf8)
+        return text.toUtf8();
+    QTextCodec *codec = codecForEncoding(actual);
+    return codec ? codec->fromUnicode(text) : text.toUtf8();
+}
+
+bool loadTextFile(const QString &path, QString *content, QString *error,
+                  TextEncoding encoding, TextEncoding *detectedEncoding)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
@@ -471,13 +593,14 @@ bool loadTextFile(const QString &path, QString *content, QString *error)
         return false;
     }
     const QByteArray bytes = file.readAll();
+    const QString decoded = decodeBytes(bytes, encoding, detectedEncoding);
     if (content)
-        *content = QString::fromUtf8(bytes);
+        *content = decoded;
     return true;
 }
 
 bool saveTextFileWithBackup(const QString &path, const QString &content, bool createBackup,
-                            QString *backupPath, QString *error)
+                            QString *backupPath, QString *error, TextEncoding encoding)
 {
     if (path.trimmed().isEmpty()) {
         if (error)
@@ -513,13 +636,94 @@ bool saveTextFileWithBackup(const QString &path, const QString &content, bool cr
             *error = QStringLiteral("无法打开写入 %1：%2").arg(path, out.errorString());
         return false;
     }
-    const QByteArray utf8 = content.toUtf8();
-    if (out.write(utf8) != utf8.size() || !out.commit()) {
+    const QByteArray payload = encodeText(content, encoding);
+    if (out.write(payload) != payload.size() || !out.commit()) {
         if (error)
             *error = QStringLiteral("写入文件失败 %1：%2").arg(path, out.errorString());
         return false;
     }
     return true;
+}
+
+QVector<CompareHistoryItem> loadCompareHistory(const QString &dataDir, const QString &category)
+{
+    QVector<CompareHistoryItem> items;
+    if (dataDir.isEmpty() || category.isEmpty())
+        return items;
+    QFile file(QDir(dataDir).filePath(QStringLiteral("compare_history.json")));
+    if (!file.open(QIODevice::ReadOnly))
+        return items;
+    const QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    if (!doc.isObject())
+        return items;
+    const QJsonArray arr = doc.object().value(category).toArray();
+    for (const QJsonValue &v : arr) {
+        const QJsonObject obj = v.toObject();
+        const QString l = obj.value(QStringLiteral("left")).toString();
+        const QString r = obj.value(QStringLiteral("right")).toString();
+        if (!l.isEmpty() || !r.isEmpty())
+            items.append({l, r});
+    }
+    return items;
+}
+
+bool recordCompareHistory(const QString &dataDir, const QString &category,
+                          const QString &leftPath, const QString &rightPath, int maxItems)
+{
+    if (dataDir.isEmpty() || category.isEmpty() || (leftPath.isEmpty() && rightPath.isEmpty()))
+        return false;
+    const QString filePath = QDir(dataDir).filePath(QStringLiteral("compare_history.json"));
+
+    QJsonObject root;
+    {
+        QFile in(filePath);
+        if (in.open(QIODevice::ReadOnly)) {
+            const QJsonDocument doc = QJsonDocument::fromJson(in.readAll());
+            if (doc.isObject())
+                root = doc.object();
+        }
+    }
+
+    QVector<CompareHistoryItem> list = loadCompareHistory(dataDir, category);
+    for (int i = list.size() - 1; i >= 0; --i) {
+        if (list.at(i).leftPath == leftPath && list.at(i).rightPath == rightPath)
+            list.removeAt(i);
+    }
+    list.prepend({leftPath, rightPath});
+    while (list.size() > qMax(1, maxItems))
+        list.removeLast();
+
+    QJsonArray arr;
+    for (const CompareHistoryItem &item : list) {
+        QJsonObject o;
+        o.insert(QStringLiteral("left"), item.leftPath);
+        o.insert(QStringLiteral("right"), item.rightPath);
+        arr.append(o);
+    }
+    root.insert(category, arr);
+
+    QSaveFile out(filePath);
+    if (!out.open(QIODevice::WriteOnly))
+        return false;
+    const QByteArray bytes = QJsonDocument(root).toJson(QJsonDocument::Indented);
+    if (out.write(bytes) != bytes.size() || !out.commit())
+        return false;
+    QFile::setPermissions(filePath, QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    return true;
+}
+
+QStringList parseIgnorePatterns(const QString &rawText)
+{
+    QString s = rawText;
+    s.replace(QLatin1Char(','), QLatin1Char(';'));
+    const QStringList raw = s.split(QLatin1Char(';'), Qt::SkipEmptyParts);
+    QStringList out;
+    for (const QString &part : raw) {
+        const QString trimmed = part.trimmed();
+        if (!trimmed.isEmpty())
+            out.append(trimmed);
+    }
+    return out;
 }
 
 // ============================================================================

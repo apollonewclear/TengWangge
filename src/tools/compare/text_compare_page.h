@@ -7,6 +7,9 @@
 #include <QWidget>
 
 class QCheckBox;
+class QComboBox;
+class QDragEnterEvent;
+class QDropEvent;
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -20,8 +23,8 @@ class DiffCodeEditor;
 class DiffOverviewBar;
 
 // 文本比较页（参考 Beyond Compare）：
-// 左右并排可编辑视图（带行号栏、行级/字符级差异高亮与同步滚动）+ 中央差异缩略图 +
-// 仅差异行表视图 + 差异块导航与双向复制 + 保存前自动 .bak 备份。
+// 左右并排可编辑视图（行号栏、行级/字符级高亮、同步滚动）+ 中央差异缩略条 +
+// 多编码自动探测/切换（UTF-8 / GB18030 / UTF-16）+ 文内查找 + F7/F8/Ctrl+S 快捷键 + 历史与拖放。
 class TextComparePage : public QWidget
 {
     Q_OBJECT
@@ -34,12 +37,18 @@ public:
                   const QString &leftLabel = QString(), const QString &rightLabel = QString());
     void loadSample();
 
+    void setEncoding(cmp::TextEncoding encoding);
+    cmp::TextEncoding selectedEncoding() const;
+    cmp::TextEncoding detectedLeftEncoding() const { return m_leftDetectedEnc; }
+    cmp::TextEncoding detectedRightEncoding() const { return m_rightDetectedEnc; }
+
     void recompare();
     void jumpToHunk(int hunkIndex);
     void prevHunk();
     void nextHunk();
     bool copyCurrentHunkToRight();
     bool copyCurrentHunkToLeft();
+    bool findInEditors(const QString &keyword);
     bool saveLeft(QString *error = nullptr);
     bool saveRight(QString *error = nullptr);
 
@@ -48,10 +57,16 @@ public:
     QString leftText() const;
     QString rightText() const;
 
+protected:
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
+
 private:
+    void installShortcuts();
     void browseLeft();
     void browseRight();
     void swapSides();
+    void showHistoryMenu();
     void exportReport();
     void applyHighlights();
     void rebuildDiffOnlyTable();
@@ -65,6 +80,8 @@ private:
     bool m_rightDirty = false;
     bool m_suppressEditSignal = false;
     bool m_syncingScroll = false;
+    cmp::TextEncoding m_leftDetectedEnc = cmp::TextEncoding::Utf8;
+    cmp::TextEncoding m_rightDetectedEnc = cmp::TextEncoding::Utf8;
 
     QLineEdit *m_leftPath = nullptr;
     QLineEdit *m_rightPath = nullptr;
@@ -72,6 +89,8 @@ private:
     QLabel *m_rightTitle = nullptr;
     QPushButton *m_saveLeftBtn = nullptr;
     QPushButton *m_saveRightBtn = nullptr;
+    QPushButton *m_historyBtn = nullptr;
+    QComboBox *m_encodingCombo = nullptr;
 
     QPushButton *m_modeAllBtn = nullptr;
     QPushButton *m_modeDiffBtn = nullptr;
@@ -83,6 +102,7 @@ private:
     QCheckBox *m_ignoreWs = nullptr;
     QCheckBox *m_ignoreCase = nullptr;
     QCheckBox *m_autoBackup = nullptr;
+    QLineEdit *m_findEdit = nullptr;
 
     QStackedWidget *m_viewStack = nullptr;
     DiffCodeEditor *m_leftEditor = nullptr;
