@@ -2,6 +2,7 @@
 
 #include "core/data_paths.h"
 #include "core/log_buffer.h"
+#include "core/log_file_sink.h"
 #include "core/navigation_gate.h"
 #include "core/status_board.h"
 
@@ -23,6 +24,7 @@ public:
     explicit PlatformServices(const DataPaths &paths, QObject *parent = nullptr);
 
     LogBuffer *log() { return &m_log; }
+    LogFileSink *fileSink() { return &m_fileSink; }
     StatusBoard *status() { return &m_status; }
     NavigationGate *gate() { return &m_gate; }
     const DataPaths &paths() const { return m_paths; }
@@ -33,6 +35,7 @@ public:
 private:
     DataPaths m_paths;
     LogBuffer m_log;
+    LogFileSink m_fileSink;
     StatusBoard m_status;
     NavigationGate m_gate;
 };
@@ -61,8 +64,9 @@ public:
     // 持有期间工具和页面导航被锁定；释放（或析构）后恢复。
     NavigationLock lockNavigation(const QString &reason) const;
 
-    // 本工具独占的数据目录，按需创建。
+    // 本工具独占的数据目录与配置文件路径，按需创建。
     QString dataDir(QString *error = nullptr) const;
+    QString settingsFile(QString *error = nullptr) const;
 
 private:
     QPointer<PlatformServices> m_platform;

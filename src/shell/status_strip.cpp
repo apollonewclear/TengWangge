@@ -92,17 +92,46 @@ void StatusStrip::setStatus(const StatusMessage &message)
 
 void StatusStrip::setLocked(bool locked, const QString &reason)
 {
+    if (!locked) {
+        setLocks({});
+        return;
+    }
+    setLocks({NavigationGate::HoldInfo{QString(), reason}});
+}
+
+void StatusStrip::setLocks(const QVector<NavigationGate::HoldInfo> &holds)
+{
+    const bool locked = !holds.isEmpty();
     m_lock->setVisible(locked);
-    if (locked) {
-        const QString shortReason = reason.size() > 30 ? reason.left(30) + QChar(0x2026) : reason;
-        const QString text = shortReason.isEmpty()
+    if (!locked) {
+        m_lock->clear();
+        m_lock->setToolTip(QString());
+        return;
+    }
+
+    const QString latest = holds.last().reason;
+    const QString shortReason = latest.size() > 28 ? latest.left(28) + QChar(0x2026) : latest;
+    QString text;
+    if (holds.size() > 1) {
+        text = shortReason.isEmpty()
+            ? QStringLiteral("导航已锁定（%1 项任务）").arg(holds.size())
+            : QStringLiteral("导航已锁定（%1 项）：%2").arg(holds.size()).arg(shortReason);
+    } else {
+        text = shortReason.isEmpty()
             ? QStringLiteral("导航已锁定")
             : QStringLiteral("导航已锁定：%1").arg(shortReason);
-        m_lock->setText(text);
-        m_lock->setToolTip(QStringLiteral("长时间任务进行中，任务结束前不能切换工具或页面。%1").arg(reason));
-    } else {
-        m_lock->clear();
     }
+    m_lock->setText(text);
+
+    QStringList tipLines{QStringLiteral("长时间任务进行中，全部结束前不能切换工具或页面：")};
+    for (int i = 0; i < holds.size(); ++i) {
+        const QString &owner = holds.at(i).ownerToolId;
+        const QString &r = holds.at(i).reason;
+        tipLines.append(owner.isEmpty()
+                            ? QStringLiteral("• %1").arg(r.isEmpty() ? QStringLiteral("未命名任务") : r)
+                            : QStringLiteral("• [%1] %2").arg(owner, r.isEmpty() ? QStringLiteral("未命名任务") : r));
+    }
+    m_lock->setToolTip(tipLines.join(QLatin1Char('\n')));
 }
 
 QString StatusStrip::statusText() const

@@ -1,8 +1,10 @@
 #pragma once
 
 #include "core/platform_services.h"
+#include "core/shell_config.h"
 #include "shell/tool_registry.h"
 
+#include <QHash>
 #include <QMainWindow>
 #include <QPointer>
 
@@ -58,6 +60,13 @@ public:
     void setLogPanelVisible(bool visible);
     bool isLogPanelVisible() const;
 
+    // 会话状态持久化（窗口尺寸、日志展开状态/高度、上次选中工具与各工具页面）。
+    SessionState captureSessionState() const;
+    void applySessionState(const SessionState &state, bool restoreGeometry = true,
+                           bool restoreTool = true);
+    bool loadSessionState(bool restoreGeometry = true, bool restoreTool = true);
+    bool saveSessionState(QString *error = nullptr) const;
+
     // 有任务持有导航锁时关闭窗口会先调用它；返回 false 取消关闭。
     // 默认弹出确认框。测试里替换成固定返回值。
     void setCloseGuard(std::function<bool(const QString &reason)> guard);
@@ -105,6 +114,8 @@ private:
 
     QPointer<QWidget> m_focusBeforeLock;
     std::function<bool(const QString &)> m_closeGuard;
+    QHash<QString, QString> m_savedToolPages;
+    int m_preferredLogHeight = 0;
     bool m_syncingRail = false;
     bool m_tornDown = false;
 };

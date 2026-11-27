@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include <QVector>
 
 #include <vector>
 
@@ -19,6 +20,12 @@ class NavigationGate : public QObject
 public:
     using Token = quint64;
 
+    struct HoldInfo
+    {
+        QString ownerToolId;
+        QString reason;
+    };
+
     explicit NavigationGate(QObject *parent = nullptr);
 
     Token acquire(const QString &ownerToolId, const QString &reason);
@@ -29,6 +36,7 @@ public:
     int holdCount() const { return static_cast<int>(m_holds.size()); }
     QString reason() const;                    // 最近一把仍持有的锁的原因
     QString ownerToolId() const;
+    QVector<HoldInfo> activeHolds() const;
 
 signals:
     void lockedChanged(bool locked);

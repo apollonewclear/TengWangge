@@ -1,45 +1,15 @@
 #include "tools/welcome/welcome_tool.h"
 
 #include "core/app_info.h"
+#include "shell/page_chrome.h"
 
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QVBoxLayout>
-#include <QVariant>
 
 namespace tw {
 namespace {
-
-QLabel *makeLabel(const QString &text, const char *role, QWidget *parent = nullptr)
-{
-    auto *label = new QLabel(text, parent);
-    label->setProperty("role", QString::fromLatin1(role));
-    label->setWordWrap(true);
-    return label;
-}
-
-QFrame *makeTableRow(const QStringList &cols, const QList<int> &widths, bool header, bool alt)
-{
-    auto *row = new QFrame;
-    row->setProperty("role", QString::fromLatin1(header ? "tableHeader" : (alt ? "tableRowAlt" : "tableRow")));
-    auto *layout = new QHBoxLayout(row);
-    layout->setContentsMargins(12, 7, 12, 7);
-    layout->setSpacing(14);
-
-    for (int i = 0; i < cols.size(); ++i) {
-        const char *role = header ? "fieldLabel" : (i == 1 ? "code" : (i == cols.size() - 1 ? "value" : "pageSubtitle"));
-        auto *lbl = makeLabel(cols.at(i), role);
-        if (!header && i == cols.size() - 1)
-            lbl->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        if (i < widths.size() && widths.at(i) > 0) {
-            lbl->setWordWrap(false);
-            lbl->setFixedWidth(widths.at(i));
-        }
-        layout->addWidget(lbl, (i < widths.size() && widths.at(i) > 0) ? 0 : 1);
-    }
-    return row;
-}
 
 QWidget *makeOverviewPage(const QString &dataDir, const QString &dataDirError)
 {
@@ -50,42 +20,41 @@ QWidget *makeOverviewPage(const QString &dataDir, const QString &dataDirError)
 
     auto *headerBar = new QHBoxLayout;
     headerBar->setSpacing(10);
-    headerBar->addWidget(makeLabel(QStringLiteral("平台概览"), "pageTitle"));
-    auto *pill = new QLabel(QStringLiteral("运行正常"));
-    pill->setProperty("role", QStringLiteral("pill"));
+    headerBar->addWidget(ui::makeLabel(QStringLiteral("平台概览"), "pageTitle"));
+    QLabel *pill = ui::makeLabel(QStringLiteral("运行正常"), "pill");
+    pill->setWordWrap(false);
     headerBar->addWidget(pill);
     headerBar->addStretch(1);
     layout->addLayout(headerBar);
 
-    layout->addWidget(makeLabel(
+    layout->addWidget(ui::makeLabel(
         QStringLiteral("滕王阁是面向麒麟桌面的“外壳 + 工具模块”可扩展工具箱平台。左侧选择工具模块，"
                        "顶部页签切换当前工具内的功能页面，底部集中查看消息日志与导航状态。"),
         "pageSubtitle"));
 
-    auto *card = new QFrame;
-    card->setProperty("role", QStringLiteral("card"));
+    QFrame *card = ui::makeCard();
     auto *cardLayout = new QVBoxLayout(card);
     cardLayout->setContentsMargins(0, 0, 0, 0);
     cardLayout->setSpacing(0);
 
     const QList<int> widths{52, 130, 140, 0};
-    cardLayout->addWidget(makeTableRow(
+    cardLayout->addWidget(ui::makeTableRow(
         {QStringLiteral("序号"), QStringLiteral("编码"), QStringLiteral("配置项"), QStringLiteral("当前值")},
         widths, true, false));
-    cardLayout->addWidget(makeTableRow(
+    cardLayout->addWidget(ui::makeTableRow(
         {QStringLiteral("1"), QStringLiteral("app.name"), QStringLiteral("程序内部名称"), AppInfo::internalName()},
         widths, false, false));
-    cardLayout->addWidget(makeTableRow(
+    cardLayout->addWidget(ui::makeTableRow(
         {QStringLiteral("2"), QStringLiteral("app.version"), QStringLiteral("平台版本"), AppInfo::version()},
         widths, false, true));
-    cardLayout->addWidget(makeTableRow(
+    cardLayout->addWidget(ui::makeTableRow(
         {QStringLiteral("3"), QStringLiteral("tool.datadir"), QStringLiteral("本工具隔离目录"),
          dataDirError.isEmpty() ? dataDir : QStringLiteral("不可用：%1").arg(dataDirError)},
         widths, false, false));
     layout->addWidget(card);
 
-    layout->addWidget(makeLabel(
-        QStringLiteral("说明：各工具仅读写各自的 0700 隔离数据子目录，拒绝写入系统目录；"
+    layout->addWidget(ui::makeLabel(
+        QStringLiteral("说明：各工具仅读写各自的 0700 隔离数据子目录，日志自动滚动写入 logs/tengwangge.log；"
                        "可通过环境变量 TENGWANGGE_DATA_DIR 指定受控根目录。"),
         "hint"));
     layout->addStretch(1);
@@ -99,17 +68,16 @@ QWidget *makeKeysPage()
     layout->setContentsMargins(16, 14, 16, 14);
     layout->setSpacing(10);
 
-    layout->addWidget(makeLabel(QStringLiteral("键盘操作"), "pageTitle"));
-    layout->addWidget(makeLabel(QStringLiteral("所有工具模块共用统一的两层导航与面板快捷键。"), "pageSubtitle"));
+    layout->addWidget(ui::makeLabel(QStringLiteral("键盘操作"), "pageTitle"));
+    layout->addWidget(ui::makeLabel(QStringLiteral("所有工具模块共用统一的两层导航与面板快捷键。"), "pageSubtitle"));
 
-    auto *card = new QFrame;
-    card->setProperty("role", QStringLiteral("card"));
+    QFrame *card = ui::makeCard();
     auto *cardLayout = new QVBoxLayout(card);
     cardLayout->setContentsMargins(0, 0, 0, 0);
     cardLayout->setSpacing(0);
 
     const QList<int> widths{52, 200, 0};
-    cardLayout->addWidget(makeTableRow(
+    cardLayout->addWidget(ui::makeTableRow(
         {QStringLiteral("序号"), QStringLiteral("快捷键"), QStringLiteral("功能说明")},
         widths, true, false));
 
@@ -122,13 +90,13 @@ QWidget *makeKeysPage()
         {QStringLiteral("F1"), QStringLiteral("弹出键盘操作帮助窗口")},
     };
     for (int i = 0; i < rows.size(); ++i) {
-        cardLayout->addWidget(makeTableRow(
+        cardLayout->addWidget(ui::makeTableRow(
             {QString::number(i + 1), rows.at(i).first, rows.at(i).second},
             widths, false, i % 2 == 1));
     }
     layout->addWidget(card);
 
-    layout->addWidget(makeLabel(
+    layout->addWidget(ui::makeLabel(
         QStringLiteral("提示：长时间任务运行期间导航自动锁定并置灰，状态栏显示锁定原因，防止误切换中断任务。"),
         "hint"));
     layout->addStretch(1);

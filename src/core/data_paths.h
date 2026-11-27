@@ -22,9 +22,13 @@ public:
     QString root() const { return m_root; }
     QString logDir() const;
     QString ensureLogDir(QString *error = nullptr) const;
+    QString configDir() const;
+    QString ensureConfigDir(QString *error = nullptr) const;
+    QString shellConfigFile(QString *error = nullptr) const;
 
     // 返回已创建的工具目录（0700 权限）；失败时返回空串并写入 error。
     QString toolDataDir(const QString &toolId, QString *error = nullptr) const;
+    QString toolSettingsFile(const QString &toolId, QString *error = nullptr) const;
 
     // 非空表示该根目录不可用（空、根目录或系统目录）。
     static QString rootProblem(const QString &root);

@@ -9,6 +9,7 @@ PlatformServices::PlatformServices(const DataPaths &paths, QObject *parent)
     : QObject(parent)
     , m_paths(paths)
     , m_log(2000)
+    , m_fileSink(m_paths, &m_log)
 {
 }
 
@@ -95,6 +96,16 @@ QString ToolServices::dataDir(QString *error) const
         return {};
     }
     return m_platform->paths().toolDataDir(m_toolId, error);
+}
+
+QString ToolServices::settingsFile(QString *error) const
+{
+    if (!m_platform) {
+        if (error)
+            *error = QStringLiteral("平台服务已不可用");
+        return {};
+    }
+    return m_platform->paths().toolSettingsFile(m_toolId, error);
 }
 
 } // namespace tw

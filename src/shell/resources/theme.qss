@@ -124,6 +124,15 @@ QFrame#logHeader {
     border-top-right-radius: 2px;
 }
 QLabel#logTitle { font-weight: 700; color: @text@; background: transparent; }
+QFrame#logHeader QLineEdit#logSearch {
+    padding: 2px 6px; min-height: 20px; font-size: 12px;
+}
+QFrame#logHeader QComboBox#logLevelFilter {
+    padding: 2px 8px; min-height: 20px; font-size: 12px;
+}
+QFrame#logHeader QPushButton {
+    padding: 2px 10px; min-height: 20px; font-size: 12px;
+}
 QPlainTextEdit#logView {
     background: @panel@;
     border: 1px solid @border@;

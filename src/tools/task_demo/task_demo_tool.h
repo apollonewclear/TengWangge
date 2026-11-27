@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/platform_services.h"
+#include "core/task_runner.h"
 #include "shell/i_tool.h"
 
 #include <QPointer>
@@ -10,15 +11,11 @@ class QCheckBox;
 class QLabel;
 class QProgressBar;
 class QPushButton;
-class QTimer;
 
 namespace tw {
 
-// “任务”页：模拟一次长时间任务，演示外壳服务的三种用法
-//   1. 任务期间持有导航锁（NavigationLock），结束或取消时释放；
-//   2. 用 showStatus 汇报 进行中 / 成功 / 错误；
-//   3. 用 log 写日志。
-// 没有任何真实业务逻辑。
+// “任务执行”页：基于平台标准后台运行器 TaskRunner 演示真实工作线程执行、
+// 可中断休眠、进度回传、RAII 导航锁定以及错误/取消收敛。
 class TaskDemoPage : public QWidget
 {
     Q_OBJECT
@@ -26,13 +23,13 @@ class TaskDemoPage : public QWidget
 public:
     TaskDemoPage(const ToolServices &services, int stepIntervalMs, QWidget *parent = nullptr);
 
-    bool isRunning() const { return m_running; }
-    int progress() const { return m_progress; }
+    bool isRunning() const;
+    int progress() const;
     QPushButton *startButton() const { return m_start; }
     QPushButton *cancelButton() const { return m_cancel; }
     QCheckBox *failCheck() const { return m_fail; }
 
-    // 页面销毁或工具关闭时调用：停止计时并释放锁。
+    // 页面销毁或工具关闭时调用：立即唤醒后台线程并释放锁。
     void abort();
 
 signals:
@@ -41,21 +38,17 @@ signals:
 private:
     void start();
     void cancel();
-    void tick();
-    void end(bool success, const QString &message);
     void updateUi();
 
     ToolServices m_services;
-    NavigationLock m_lock;
-    QTimer *m_timer = nullptr;
+    TaskRunner *m_runner = nullptr;
+    int m_stepIntervalMs = 400;
     QLabel *m_state = nullptr;
     QLabel *m_percent = nullptr;
     QProgressBar *m_bar = nullptr;
     QPushButton *m_start = nullptr;
     QPushButton *m_cancel = nullptr;
     QCheckBox *m_fail = nullptr;
-    int m_progress = 0;
-    bool m_running = false;
 };
 
 class TaskDemoTool : public ITool

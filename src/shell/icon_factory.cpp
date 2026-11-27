@@ -86,6 +86,12 @@ void drawGlyph(QPainter &p, const QString &key, const QColor &color, const QColo
         p.setPen(accentPen);
         p.drawPath(qmark);
         p.drawPoint(QPointF(8.0, 11.6));
+    } else if (key == QLatin1String("export")) {
+        p.drawPolyline(QPolygonF({QPointF(3.0, 10.0), QPointF(3.0, 13.5),
+                                  QPointF(13.0, 13.5), QPointF(13.0, 10.0)}));
+        p.setPen(accentPen);
+        p.drawLine(QPointF(8.0, 10.2), QPointF(8.0, 2.5));
+        p.drawPolyline(QPolygonF({QPointF(5.2, 5.2), QPointF(8.0, 2.3), QPointF(10.8, 5.2)}));
     } else {
         p.drawRoundedRect(QRectF(2.5, 2.5, 11.0, 11.0), 2.0, 2.0);
     }
@@ -97,7 +103,8 @@ QStringList IconFactory::knownKeys()
 {
     return {QStringLiteral("overview"),    QStringLiteral("task"),   QStringLiteral("status"),
             QStringLiteral("info"),        QStringLiteral("environment"), QStringLiteral("log"),
-            QStringLiteral("lock"),        QStringLiteral("refresh"), QStringLiteral("help")};
+            QStringLiteral("lock"),        QStringLiteral("refresh"), QStringLiteral("help"),
+            QStringLiteral("export")};
 }
 
 QPixmap IconFactory::pixmap(const QString &key, int size, const QColor &color,

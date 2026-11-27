@@ -4,6 +4,7 @@
 
 #include "core/app_info.h"
 #include "core/platform_services.h"
+#include "core/shell_config.h"
 #include "shell/elided_label.h"
 #include "shell/icon_factory.h"
 #include "shell/log_panel.h"
@@ -19,6 +20,7 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QFile>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
@@ -213,6 +215,7 @@ private slots:
     // ---- 主窗口：两层导航 ----
     void window_selectsFirstToolAndSyncsRail();
     void window_initialToolIdSkipsDefaultToolCreation();
+    void window_sessionStatePersistsAcrossRestarts();
     void window_railClickAndKeyboardSwitchTools();
     void window_pageSelectionIsPerTool();
     void window_breadcrumbAndTitleFollowSelection();
@@ -231,6 +234,7 @@ private slots:
     void status_infoReturnsToIdle();
     void status_longTextDoesNotWidenWindow();
     void log_filtersByCurrentToolAndShowAll();
+    void log_levelSearchFiltersAndExport();
     void log_clearAndToggle();
 
     // ---- 键盘 ----
@@ -430,6 +434,45 @@ void UiTests::window_initialToolIdSkipsDefaultToolCreation()
     QCOMPARE(tools[0]->activatedCalls, 0);
     QCOMPARE(tools[1]->createCalls, 1);
     QCOMPARE(tools[1]->activatedCalls, 1);
+}
+
+void UiTests::window_sessionStatePersistsAcrossRestarts()
+{
+    QTemporaryDir dir;
+    const DataPaths paths(dir.path() + QStringLiteral("/data"));
+
+    {
+        ToolRegistry registry;
+        for (const FakeTool::Spec &spec : threeTools())
+            QVERIFY(registry.add(std::make_unique<FakeTool>(spec)));
+        MainWindow first(std::make_unique<PlatformServices>(paths), std::move(registry));
+        first.resize(1060, 680);
+        QVERIFY(first.selectToolById(QStringLiteral("beta")));
+        QVERIFY(first.selectPageById(QStringLiteral("p1")));
+        first.setLogPanelVisible(true);
+        QString err;
+        QVERIFY2(first.saveSessionState(&err), qPrintable(err));
+    }
+
+    const SessionState saved = ShellConfig(paths).load();
+    QCOMPARE(saved.currentToolId, QStringLiteral("beta"));
+
+    ToolRegistry registry2;
+    QVector<FakeTool *> tools2;
+    for (const FakeTool::Spec &spec : threeTools()) {
+        auto t = std::make_unique<FakeTool>(spec);
+        tools2.append(t.get());
+        QVERIFY(registry2.add(std::move(t)));
+    }
+    MainWindow second(std::make_unique<PlatformServices>(paths), std::move(registry2),
+                      nullptr, saved.currentToolId);
+    second.applySessionState(saved, true, false);
+
+    QCOMPARE(second.currentToolId(), QStringLiteral("beta"));
+    QCOMPARE(second.currentView()->currentPage(), 1);
+    QVERIFY(second.isLogPanelVisible());
+    QCOMPARE(second.size(), QSize(1060, 680));
+    QCOMPARE(tools2[0]->createCalls, 0);
 }
 
 void UiTests::window_railClickAndKeyboardSwitchTools()
@@ -711,6 +754,39 @@ void UiTests::log_filtersByCurrentToolAndShowAll()
 
     f.tools[2]->services.logError(QStringLiteral("来自丙"));
     QVERIFY(panel->plainText().contains(QStringLiteral("来自丙")));
+}
+
+void UiTests::log_levelSearchFiltersAndExport()
+{
+    Fixture f(threeTools());
+    LogPanel *panel = f.window->logPanel();
+    f.tools[0]->services.logInfo(QStringLiteral("普通消息-alpha"));
+    f.tools[0]->services.logWarning(QStringLiteral("告警消息-needle"));
+    f.tools[0]->services.logError(QStringLiteral("故障消息-omega"));
+
+    panel->setLevelFilter(LogPanel::LevelFilter::WarningAndError);
+    QVERIFY(!panel->plainText().contains(QStringLiteral("普通消息-alpha")));
+    QVERIFY(panel->plainText().contains(QStringLiteral("告警消息-needle")));
+    QVERIFY(panel->plainText().contains(QStringLiteral("故障消息-omega")));
+
+    panel->setLevelFilter(LogPanel::LevelFilter::ErrorOnly);
+    QVERIFY(!panel->plainText().contains(QStringLiteral("告警消息-needle")));
+    QVERIFY(panel->plainText().contains(QStringLiteral("故障消息-omega")));
+
+    panel->setLevelFilter(LogPanel::LevelFilter::All);
+    panel->setSearchText(QStringLiteral("needle"));
+    QVERIFY(!panel->plainText().contains(QStringLiteral("普通消息-alpha")));
+    QVERIFY(panel->plainText().contains(QStringLiteral("告警消息-needle")));
+    QVERIFY(!panel->plainText().contains(QStringLiteral("故障消息-omega")));
+
+    const QString outPath = f.dir.filePath(QStringLiteral("exported.log"));
+    QString err;
+    QVERIFY2(panel->exportToFile(outPath, &err), qPrintable(err));
+    QFile exported(outPath);
+    QVERIFY(exported.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QString diskText = QString::fromUtf8(exported.readAll());
+    QVERIFY(diskText.contains(QStringLiteral("告警消息-needle")));
+    QVERIFY(!diskText.contains(QStringLiteral("普通消息-alpha")));
 }
 
 void UiTests::log_clearAndToggle()

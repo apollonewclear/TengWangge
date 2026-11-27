@@ -180,7 +180,7 @@ button->setProperty("role", QStringLiteral("primary"));
 
 ## 6. 图标
 
-`iconKey` 取自 `IconFactory::knownKeys()`：`overview task status info environment log lock refresh help`。
+`iconKey` 取自 `IconFactory::knownKeys()`：`overview task status info environment log lock refresh help export`。
 未知的 key 显示通用方块图标。新增图标：在 `src/shell/icon_factory.cpp` 的 `drawGlyph()`
 里加一个分支（16×16 坐标系的线性图形），并把 key 加进 `knownKeys()`；
 `theme_iconsRenderForAllKnownKeys` 会校验每个 key 都画出了像素。

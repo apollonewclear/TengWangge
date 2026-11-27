@@ -55,6 +55,15 @@ QString NavigationGate::ownerToolId() const
     return m_holds.empty() ? QString() : m_holds.back().owner;
 }
 
+QVector<NavigationGate::HoldInfo> NavigationGate::activeHolds() const
+{
+    QVector<HoldInfo> list;
+    list.reserve(static_cast<int>(m_holds.size()));
+    for (const Hold &hold : m_holds)
+        list.append(HoldInfo{hold.owner, hold.reason});
+    return list;
+}
+
 NavigationLock::NavigationLock(NavigationGate *gate, const QString &ownerToolId,
                                const QString &reason)
     : m_gate(gate)

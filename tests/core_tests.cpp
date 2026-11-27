@@ -1,19 +1,25 @@
 #include "core/app_info.h"
 #include "core/data_paths.h"
 #include "core/log_buffer.h"
+#include "core/log_file_sink.h"
 #include "core/navigation_gate.h"
 #include "core/platform_services.h"
+#include "core/shell_config.h"
 #include "core/status_board.h"
+#include "core/task_runner.h"
 #include "core/tool_info.h"
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QThread>
+
+#include <stdexcept>
 
 using namespace tw;
 
@@ -56,6 +62,10 @@ private slots:
     void toolServicesDataDirsAreIsolated();
     void toolServicesCrossThreadCallsAreSafe();
     void toolServicesAfterPlatformIsGoneAreNoOps();
+
+    void logFileSinkWritesAndRotatesPrivately();
+    void shellConfigRoundTripsAndValidates();
+    void taskRunnerExecutesCancelsAndCatchesExceptions();
 };
 
 void CoreTests::identifiersAcceptOnlyStableNames_data()
@@ -539,6 +549,113 @@ void CoreTests::toolServicesAfterPlatformIsGoneAreNoOps()
     ToolServices defaultConstructed;
     QVERIFY(!defaultConstructed.valid());
     defaultConstructed.logInfo(QStringLiteral("ignored"));
+}
+
+void CoreTests::logFileSinkWritesAndRotatesPrivately()
+{
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const DataPaths paths(temp.filePath(QStringLiteral("data")));
+    LogBuffer buffer(100);
+    LogFileSink sink(paths, &buffer, 1024, 2);
+
+    for (int i = 0; i < 30; ++i) {
+        buffer.append(LogLevel::Info, QStringLiteral("alpha"),
+                      QStringLiteral("entry-%1-%2").arg(i).arg(QString(60, QLatin1Char('x'))));
+    }
+
+    const QString active = sink.currentLogFile();
+    const QString rot1 = active + QStringLiteral(".1");
+    const QString rot2 = active + QStringLiteral(".2");
+    const QString rot3 = active + QStringLiteral(".3");
+
+    QVERIFY(QFileInfo::exists(active));
+    QVERIFY(QFileInfo::exists(rot1));
+    QVERIFY(QFileInfo::exists(rot2));
+    QVERIFY(!QFileInfo::exists(rot3));
+
+    constexpr QFileDevice::Permissions forbidden =
+        QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ExeGroup
+        | QFileDevice::ReadOther | QFileDevice::WriteOther | QFileDevice::ExeOther;
+    QCOMPARE(QFileInfo(active).permissions() & forbidden, QFileDevice::Permissions());
+    QCOMPARE(QFileInfo(rot1).permissions() & forbidden, QFileDevice::Permissions());
+}
+
+void CoreTests::shellConfigRoundTripsAndValidates()
+{
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
+    const DataPaths paths(temp.filePath(QStringLiteral("data")));
+    const ShellConfig config(paths);
+    QVERIFY(!config.exists());
+
+    SessionState saved;
+    saved.windowSize = QSize(1260, 810);
+    saved.logVisible = true;
+    saved.logHeight = 175;
+    saved.currentToolId = QStringLiteral("sysinfo");
+    saved.toolPages.insert(QStringLiteral("welcome"), QStringLiteral("keys"));
+    saved.toolPages.insert(QStringLiteral("Bad Id"), QStringLiteral("p0"));
+
+    QString error;
+    QVERIFY2(config.save(saved, &error), qPrintable(error));
+    QVERIFY(config.exists());
+
+    const SessionState loaded = config.load();
+    QCOMPARE(loaded.windowSize, QSize(1260, 810));
+    QCOMPARE(loaded.logVisible, true);
+    QCOMPARE(loaded.logHeight, 175);
+    QCOMPARE(loaded.currentToolId, QStringLiteral("sysinfo"));
+    QCOMPARE(loaded.toolPages.value(QStringLiteral("welcome")), QStringLiteral("keys"));
+    QVERIFY(!loaded.toolPages.contains(QStringLiteral("Bad Id")));
+}
+
+void CoreTests::taskRunnerExecutesCancelsAndCatchesExceptions()
+{
+    qRegisterMetaType<tw::LogEntry>("tw::LogEntry");
+    QTemporaryDir temp;
+    PlatformServices platform((DataPaths(temp.path())));
+    const ToolServices svc = platform.servicesFor(QStringLiteral("worker"));
+
+    // 1. 正常完成
+    TaskRunner runner(svc);
+    QSignalSpy finishedSpy(&runner, &TaskRunner::finished);
+    QVERIFY(runner.start(QStringLiteral("批处理测试"), [](TaskControl &ctl, QString *) {
+        ctl.reportProgress(50);
+        return true;
+    }));
+    QVERIFY(platform.gate()->isLocked());
+    QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, 2000);
+    QVERIFY(!platform.gate()->isLocked());
+    QCOMPARE(finishedSpy.last().at(0).toBool(), true);
+    QCOMPARE(finishedSpy.last().at(1).toBool(), false);
+    QCOMPARE(runner.progress(), 100);
+
+    // 2. 捕获异常并释放锁
+    finishedSpy.clear();
+    QVERIFY(runner.start(QStringLiteral("异常测试"), [](TaskControl &, QString *) -> bool {
+        throw std::runtime_error("worker-boom");
+    }));
+    QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, 2000);
+    QVERIFY(!platform.gate()->isLocked());
+    QCOMPARE(finishedSpy.last().at(0).toBool(), false);
+    QCOMPARE(finishedSpy.last().at(1).toBool(), false);
+    QVERIFY(finishedSpy.last().at(2).toString().contains(QStringLiteral("worker-boom")));
+
+    // 3. 可中断休眠立即取消（5 秒休眠应在百毫秒内立即唤醒回收）
+    finishedSpy.clear();
+    QElapsedTimer timer;
+    timer.start();
+    QVERIFY(runner.start(QStringLiteral("长休眠测试"), [](TaskControl &ctl, QString *) {
+        return ctl.sleepMs(5000);
+    }));
+    QVERIFY(platform.gate()->isLocked());
+    runner.cancelAndWait();
+    QVERIFY(timer.elapsed() < 1000);
+    QVERIFY(!platform.gate()->isLocked());
+    QVERIFY(!runner.isRunning());
+    QCOMPARE(finishedSpy.count(), 1);
+    QCOMPARE(finishedSpy.last().at(1).toBool(), true);
 }
 
 QTEST_MAIN(CoreTests)

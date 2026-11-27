@@ -8,6 +8,8 @@ add_library(tengwangge_shell STATIC
     log_panel.h
     main_window.cpp
     main_window.h
+    page_chrome.cpp
+    page_chrome.h
     status_strip.cpp
     status_strip.h
     theme.cpp

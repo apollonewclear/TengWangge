@@ -1,6 +1,7 @@
 #include "tools/sysinfo/sysinfo_tool.h"
 
 #include "shell/icon_factory.h"
+#include "shell/page_chrome.h"
 #include "shell/theme.h"
 
 #include <QFrame>
@@ -16,14 +17,6 @@
 namespace tw {
 namespace {
 
-QLabel *makeLabel(const QString &text, const char *role)
-{
-    auto *label = new QLabel(text);
-    label->setProperty("role", QString::fromLatin1(role));
-    label->setWordWrap(true);
-    return label;
-}
-
 QString screenSummary()
 {
     QScreen *screen = QGuiApplication::primaryScreen();
@@ -36,13 +29,6 @@ QString screenSummary()
         .arg(screen->devicePixelRatio());
 }
 
-struct EnvRow
-{
-    QString code;
-    QString name;
-    QLabel *valueLabel = nullptr;
-};
-
 QFrame *makeHeaderRow()
 {
     auto *row = new QFrame;
@@ -52,7 +38,7 @@ QFrame *makeHeaderRow()
     layout->setSpacing(14);
 
     auto addCol = [&](const QString &title, int width) {
-        QLabel *lbl = makeLabel(title, "fieldLabel");
+        QLabel *lbl = ui::makeLabel(title, "fieldLabel");
         if (width > 0) {
             lbl->setWordWrap(false);
             lbl->setFixedWidth(width);
@@ -77,22 +63,22 @@ QFrame *makeDataRow(int index, const QString &code, const QString &name, QLabel 
     layout->setContentsMargins(12, 7, 12, 7);
     layout->setSpacing(14);
 
-    auto *seqLbl = makeLabel(QString::number(index), "value");
+    QLabel *seqLbl = ui::makeLabel(QString::number(index), "value");
     seqLbl->setWordWrap(false);
     seqLbl->setFixedWidth(48);
 
-    auto *codeLbl = makeLabel(code, "code");
+    QLabel *codeLbl = ui::makeLabel(code, "code");
     codeLbl->setWordWrap(false);
     codeLbl->setFixedWidth(130);
 
-    auto *nameLbl = makeLabel(name, "fieldLabel");
+    QLabel *nameLbl = ui::makeLabel(name, "fieldLabel");
     nameLbl->setWordWrap(false);
     nameLbl->setFixedWidth(130);
 
-    auto *valLbl = makeLabel(QString(), "value");
+    QLabel *valLbl = ui::makeLabel(QString(), "value");
     valLbl->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
-    auto *flagLbl = makeLabel(QStringLiteral("Y"), "code");
+    QLabel *flagLbl = ui::makeLabel(QStringLiteral("Y"), "code");
     flagLbl->setWordWrap(false);
     flagLbl->setFixedWidth(60);
 
@@ -133,7 +119,6 @@ QVector<ToolPage> SysInfoTool::createPages()
     layout->setContentsMargins(16, 14, 16, 14);
     layout->setSpacing(10);
 
-    // 顶部操作工具栏（贴合设计稿：左侧标题/操作按钮，支持一键刷新环境参数）
     auto *actionBar = new QHBoxLayout;
     actionBar->setSpacing(8);
     auto *refreshBtn = new QPushButton(QStringLiteral("刷新"));
@@ -142,11 +127,11 @@ QVector<ToolPage> SysInfoTool::createPages()
     refreshBtn->setAccessibleName(QStringLiteral("刷新本机信息"));
     actionBar->addWidget(refreshBtn);
     actionBar->addSpacing(8);
-    actionBar->addWidget(makeLabel(QStringLiteral("只读运行环境参数，用于麒麟现场环境核对与排障。"), "pageSubtitle"), 1);
+    actionBar->addWidget(
+        ui::makeLabel(QStringLiteral("只读运行环境参数，用于麒麟现场环境核对与排障。"), "pageSubtitle"), 1);
     layout->addLayout(actionBar);
 
-    auto *card = new QFrame;
-    card->setProperty("role", QStringLiteral("card"));
+    QFrame *card = ui::makeCard();
     auto *cardLayout = new QVBoxLayout(card);
     cardLayout->setContentsMargins(0, 0, 0, 0);
     cardLayout->setSpacing(0);
@@ -163,9 +148,9 @@ QVector<ToolPage> SysInfoTool::createPages()
         {QStringLiteral("qpa.platform"), QStringLiteral("显示后端")},
         {QStringLiteral("display.screen"), QStringLiteral("主屏幕")},
     };
-    for (int i = 0; i < defs.size(); ++i) {
+    for (int i = 0; i < defs.size(); ++i)
         cardLayout->addWidget(makeDataRow(i + 1, defs.at(i).first, defs.at(i).second, &valueLabels[i]));
-    }
+
     layout->addWidget(card);
     layout->addStretch(1);
 

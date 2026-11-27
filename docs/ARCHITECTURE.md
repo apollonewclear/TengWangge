@@ -17,8 +17,9 @@
 │   StatusStrip  LogPanel  Theme + theme.qss  IconFactory         │
 ├────────────────────────────────────────────────────────────────┤
 │ src/core           只依赖 Qt Core（静态库 tengwangge_core）      │
-│   AppInfo  ToolInfo/PageInfo  DataPaths  LogBuffer  StatusBoard │
-│   NavigationGate/NavigationLock  PlatformServices/ToolServices  │
+│   AppInfo  ToolInfo/PageInfo  DataPaths  LogBuffer  LogFileSink  │
+│   ShellConfig  StatusBoard  NavigationGate  TaskRunner           │
+│   PlatformServices / ToolServices                                │
 └────────────────────────────────────────────────────────────────┘
 ```
 

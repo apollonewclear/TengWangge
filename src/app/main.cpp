@@ -1,6 +1,7 @@
 #include "core/app_info.h"
 #include "core/data_paths.h"
 #include "core/platform_services.h"
+#include "core/shell_config.h"
 #include "shell/icon_factory.h"
 #include "shell/main_window.h"
 #include "shell/tool_registry.h"
@@ -106,9 +107,18 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // 直接将初始工具传入 MainWindow，避免默认第 0 个工具被无条件提前实例化页面与数据目录。
+    const bool isScreenshotRun = parser.isSet(shotOption);
+    const tw::ShellConfig shellConfig(paths);
+    const bool hasSavedSession = !isScreenshotRun && shellConfig.exists();
+    const tw::SessionState savedSession = hasSavedSession ? shellConfig.load() : tw::SessionState{};
+    const QString initialTool = !requestedTool.isEmpty() ? requestedTool : savedSession.currentToolId;
+
+    // 直接将目标工具传入 MainWindow，避免默认第 0 个工具被无条件提前实例化页面与数据目录。
     tw::MainWindow window(std::make_unique<tw::PlatformServices>(paths), std::move(registry),
-                          nullptr, requestedTool);
+                          nullptr, initialTool);
+
+    if (hasSavedSession)
+        window.applySessionState(savedSession, !parser.isSet(sizeOption), false);
 
     if (parser.isSet(sizeOption))
         window.resize(size);
@@ -120,7 +130,12 @@ int main(int argc, char *argv[])
     if (parser.isSet(logOption))
         window.setLogPanelVisible(true);
 
-    if (parser.isSet(shotOption)) {
+    if (!isScreenshotRun) {
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, &window,
+                         [&window]() { window.saveSessionState(); });
+    }
+
+    if (isScreenshotRun) {
         const QString file = parser.value(shotOption);
         int exitCode = 0;
         QTimer::singleShot(120, &app, [&] {

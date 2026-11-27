@@ -313,6 +313,14 @@ void MainWindow::connectServices()
         if (m_rail->isEnabled())
             m_rail->setFocus(Qt::OtherFocusReason);
     });
+    connect(m_log, &LogPanel::exported, this, [this](const QString &filePath) {
+        m_platform->servicesFor(currentToolId()).showStatus(
+            StatusState::Success, QStringLiteral("日志已导出：%1").arg(filePath));
+    });
+    connect(m_log, &LogPanel::exportFailed, this, [this](const QString &err) {
+        m_platform->servicesFor(currentToolId()).showStatus(
+            StatusState::Error, QStringLiteral("日志导出失败：%1").arg(err));
+    });
     m_log->setTitleResolver([this](const QString &toolId) {
         const int index = m_registry.indexOf(toolId);
         return index >= 0 ? m_registry.infoAt(index).title : toolId;
@@ -463,7 +471,17 @@ void MainWindow::onViewCreated(int index)
     ToolView *view = m_host->view(index);
     if (!view)
         return;
-    connect(view, &ToolView::currentPageChanged, this, [this, view] {
+    const QString toolId = m_host->info(index).id;
+    const QString savedPage = m_savedToolPages.value(toolId);
+    if (!savedPage.isEmpty()) {
+        const int pageIdx = view->indexOfPage(savedPage);
+        if (pageIdx >= 0)
+            view->setCurrentPage(pageIdx);
+    }
+    connect(view, &ToolView::currentPageChanged, this, [this, view, toolId] {
+        const int p = view->currentPage();
+        if (p >= 0)
+            m_savedToolPages.insert(toolId, view->pageInfo(p).id);
         if (view == currentView())
             refreshChrome();
     });
@@ -532,7 +550,7 @@ void MainWindow::refreshNavigationLock()
         if (ToolView *view = m_host->view(i))
             view->setNavigationEnabled(!locked);
     }
-    m_status->setLocked(locked, locked ? gate->reason() : QString());
+    m_status->setLocks(gate->activeHolds());
 
     if (!locked && m_focusBeforeLock) {
         m_focusBeforeLock->setFocus(Qt::OtherFocusReason);
@@ -591,10 +609,16 @@ void MainWindow::setLogPanelVisible(bool visible)
             m_log->show();
             const int total = m_splitter->height();
             if (total > 0) {
-                const int logHeight = qBound(130, total * 26 / 100, 195);
+                const int fallback = qBound(130, total * 26 / 100, 195);
+                const int logHeight = m_preferredLogHeight > 0
+                    ? qBound(100, m_preferredLogHeight, qMax(120, total - 160))
+                    : fallback;
                 m_splitter->setSizes({qMax(160, total - logHeight), logHeight});
             }
         } else {
+            const QList<int> sizes = m_splitter->sizes();
+            if (sizes.size() >= 2 && sizes.at(1) >= 80)
+                m_preferredLogHeight = sizes.at(1);
             m_log->hide();
         }
     }
@@ -616,6 +640,72 @@ bool MainWindow::isLogPanelVisible() const
     return !m_log->isHidden();
 }
 
+SessionState MainWindow::captureSessionState() const
+{
+    SessionState state;
+    state.windowSize = size();
+    state.logVisible = isLogPanelVisible();
+    if (isLogPanelVisible()) {
+        const QList<int> sizes = m_splitter->sizes();
+        if (sizes.size() >= 2 && sizes.at(1) > 0)
+            state.logHeight = sizes.at(1);
+    } else if (m_preferredLogHeight > 0) {
+        state.logHeight = m_preferredLogHeight;
+    }
+
+    const int cur = currentToolIndex();
+    if (cur >= 0 && m_host->state(cur) == ToolHost::State::Ready)
+        state.currentToolId = m_host->info(cur).id;
+
+    state.toolPages = m_savedToolPages;
+    for (int i = 0; i < toolCount(); ++i) {
+        if (const ToolView *view = m_host->view(i)) {
+            const int pageIdx = view->currentPage();
+            if (pageIdx >= 0)
+                state.toolPages.insert(m_host->info(i).id, view->pageInfo(pageIdx).id);
+        }
+    }
+    return state;
+}
+
+void MainWindow::applySessionState(const SessionState &state, bool restoreGeometry, bool restoreTool)
+{
+    for (auto it = state.toolPages.constBegin(); it != state.toolPages.constEnd(); ++it)
+        m_savedToolPages.insert(it.key(), it.value());
+
+    if (restoreGeometry && state.windowSize.isValid())
+        resize(state.windowSize);
+
+    if (state.logHeight > 0)
+        m_preferredLogHeight = state.logHeight;
+
+    if (restoreTool && !state.currentToolId.isEmpty())
+        selectToolById(state.currentToolId);
+
+    if (currentView()) {
+        const QString savedPage = m_savedToolPages.value(currentToolId());
+        if (!savedPage.isEmpty())
+            selectPageById(savedPage);
+    }
+
+    setLogPanelVisible(state.logVisible);
+}
+
+bool MainWindow::loadSessionState(bool restoreGeometry, bool restoreTool)
+{
+    const ShellConfig config(m_platform->paths());
+    if (!config.exists())
+        return false;
+    applySessionState(config.load(), restoreGeometry, restoreTool);
+    return true;
+}
+
+bool MainWindow::saveSessionState(QString *error) const
+{
+    const ShellConfig config(m_platform->paths());
+    return config.save(captureSessionState(), error);
+}
+
 void MainWindow::setCloseGuard(std::function<bool(const QString &)> guard)
 {
     m_closeGuard = std::move(guard);
@@ -629,9 +719,21 @@ void MainWindow::closeEvent(QCloseEvent *event)
         if (m_closeGuard) {
             allow = m_closeGuard(reason);
         } else {
+            const QVector<NavigationGate::HoldInfo> holds = m_platform->gate()->activeHolds();
+            QString detailText;
+            if (holds.size() <= 1) {
+                detailText = QStringLiteral("当前有任务正在进行（%1）。\n现在退出可能使任务中断，确定退出吗？")
+                                 .arg(reason);
+            } else {
+                QStringList items;
+                for (const NavigationGate::HoldInfo &h : holds)
+                    items.append(QStringLiteral("• %1").arg(h.reason));
+                detailText = QStringLiteral("当前有 %1 项任务正在进行：\n%2\n\n现在退出可能使任务中断，确定退出吗？")
+                                 .arg(holds.size())
+                                 .arg(items.join(QLatin1Char('\n')));
+            }
             const auto answer = QMessageBox::question(
-                this, QStringLiteral("任务仍在进行"),
-                QStringLiteral("当前有任务正在进行（%1）。\n现在退出可能使任务中断，确定退出吗？").arg(reason),
+                this, QStringLiteral("任务仍在进行"), detailText,
                 QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
             allow = answer == QMessageBox::Yes;
         }

@@ -138,6 +138,35 @@ QString DataPaths::ensureLogDir(QString *error) const
     return dir;
 }
 
+QString DataPaths::configDir() const
+{
+    return QDir(m_root).filePath(QStringLiteral("config"));
+}
+
+QString DataPaths::ensureConfigDir(QString *error) const
+{
+    const QString problem = rootProblem(m_root);
+    if (!problem.isEmpty()) {
+        if (error)
+            *error = problem;
+        return {};
+    }
+    if (!ensurePrivateDirectory(m_root, error))
+        return {};
+    const QString dir = configDir();
+    if (!ensurePrivateDirectory(dir, error))
+        return {};
+    return dir;
+}
+
+QString DataPaths::shellConfigFile(QString *error) const
+{
+    const QString dir = ensureConfigDir(error);
+    if (dir.isEmpty())
+        return {};
+    return QDir(dir).filePath(QStringLiteral("shell.ini"));
+}
+
 QString DataPaths::rootProblem(const QString &root)
 {
     const QString clean = absoluteClean(root);
@@ -179,6 +208,14 @@ QString DataPaths::toolDataDir(const QString &toolId, QString *error) const
     if (!ensurePrivateDirectory(path, error))
         return {};
     return path;
+}
+
+QString DataPaths::toolSettingsFile(const QString &toolId, QString *error) const
+{
+    const QString dir = toolDataDir(toolId, error);
+    if (dir.isEmpty())
+        return {};
+    return QDir(dir).filePath(QStringLiteral("settings.ini"));
 }
 
 } // namespace tw

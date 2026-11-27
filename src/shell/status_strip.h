@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/navigation_gate.h"
 #include "core/status_board.h"
 
 #include <QFrame>
@@ -22,6 +23,7 @@ public:
 
     void setStatus(const StatusMessage &message);
     void setLocked(bool locked, const QString &reason);
+    void setLocks(const QVector<NavigationGate::HoldInfo> &holds);
 
     StatusMessage status() const { return m_status; }
     QString statusText() const;
