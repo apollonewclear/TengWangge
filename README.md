@@ -12,7 +12,7 @@
 - 界面为简体中文；不含密钥、凭据，不改系统目录
 - 数据目录是产品自己的隔离路径，不依赖本机上任何其他产品的路径
 
-文档：[架构说明](docs/ARCHITECTURE.md) · [如何新增一个工具](docs/ADDING_A_TOOL.md)
+文档：[架构说明](docs/ARCHITECTURE.md) · [如何新增一个工具](docs/ADDING_A_TOOL.md) · [变更记录](docs/CHANGELOG.md)
 
 ## 目录
 
