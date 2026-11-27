@@ -1,18 +1,22 @@
 #include "tools/welcome/welcome_tool.h"
 
 #include "core/app_info.h"
+#include "shell/icon_factory.h"
 #include "shell/page_chrome.h"
+#include "shell/theme.h"
 
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPushButton>
 #include <QVBoxLayout>
 
 namespace tw {
 namespace {
 
-QWidget *makeOverviewPage(const QString &dataDir, const QString &dataDirError)
+QWidget *makeOverviewPage(const ToolServices &services, const QString &dataDir, const QString &dataDirError)
 {
+    const Theme &theme = Theme::workbench();
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
     layout->setContentsMargins(16, 14, 16, 14);
@@ -31,6 +35,32 @@ QWidget *makeOverviewPage(const QString &dataDir, const QString &dataDirError)
         QStringLiteral("滕王阁是面向麒麟桌面的“外壳 + 工具模块”可扩展工具箱平台。左侧选择工具模块，"
                        "顶部页签切换当前工具内的功能页面，底部集中查看消息日志与导航状态。"),
         "pageSubtitle"));
+
+    // 快捷跳转操作条（演示受控跨工具/跨页面导航服务 ToolServices::requestNavigation）
+    QFrame *toolbar = ui::makeToolbar();
+    auto *barLayout = new QHBoxLayout(toolbar);
+    barLayout->setContentsMargins(10, 6, 10, 6);
+    barLayout->setSpacing(8);
+    barLayout->addWidget(ui::makeLabel(QStringLiteral("快捷进入："), "fieldLabel"));
+
+    auto addJumpBtn = [&](const QString &label, const QString &iconKey,
+                          const QString &toolId, const QString &pageId) {
+        auto *btn = new QPushButton(label);
+        btn->setIcon(IconFactory::icon(iconKey, theme.primary, theme.primary,
+                                       theme.disabledText, theme.accent));
+        QObject::connect(btn, &QPushButton::clicked, page, [services, toolId, pageId]() {
+            services.requestNavigation(toolId, pageId);
+        });
+        barLayout->addWidget(btn);
+    };
+    addJumpBtn(QStringLiteral("任务演示"), QStringLiteral("task"),
+               QStringLiteral("task-demo"), QStringLiteral("run"));
+    addJumpBtn(QStringLiteral("本机信息"), QStringLiteral("environment"),
+               QStringLiteral("sysinfo"), QStringLiteral("system"));
+    addJumpBtn(QStringLiteral("键盘操作"), QStringLiteral("info"),
+               QStringLiteral("welcome"), QStringLiteral("keys"));
+    barLayout->addStretch(1);
+    layout->addWidget(toolbar);
 
     QFrame *card = ui::makeCard();
     auto *cardLayout = new QVBoxLayout(card);
@@ -130,7 +160,7 @@ QVector<ToolPage> WelcomeTool::createPages()
     QVector<ToolPage> pages;
     pages.append({PageInfo{QStringLiteral("overview"), QStringLiteral("平台概览"),
                            QStringLiteral("版本与数据目录"), QStringLiteral("overview")},
-                  makeOverviewPage(dir, error)});
+                  makeOverviewPage(m_context.services, dir, error)});
     pages.append({PageInfo{QStringLiteral("keys"), QStringLiteral("键盘操作"),
                            QStringLiteral("导航快捷键一览"), QStringLiteral("info")},
                   makeKeysPage()});
@@ -140,6 +170,14 @@ QVector<ToolPage> WelcomeTool::createPages()
 void WelcomeTool::activated()
 {
     m_context.services.showStatus(StatusState::Info, QStringLiteral("欢迎使用%1").arg(AppInfo::productName()));
+}
+
+void WelcomeTool::pageActivated(const QString &pageId)
+{
+    if (pageId == QLatin1String("keys"))
+        m_context.services.showStatus(StatusState::Info, QStringLiteral("当前查看：导航与面板键盘快捷键"));
+    else
+        m_context.services.showStatus(StatusState::Info, QStringLiteral("欢迎使用%1").arg(AppInfo::productName()));
 }
 
 } // namespace tw

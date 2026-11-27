@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  release-and-install:
+    name: Release (-Werror) + CTest + Install
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 5.15 dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake qtbase5-dev
+
+      - name: Configure & Build (Release preset)
+        run: |
+          cmake --preset release
+          cmake --build --preset release -j"$(nproc)"
+
+      - name: Run Automated Tests (offscreen)
+        run: ctest --preset release
+
+      - name: Verify Install Layout
+        run: |
+          cmake --install build/release --prefix /tmp/tw-stage
+          test -x /tmp/tw-stage/bin/TengWangge
+          test -f /tmp/tw-stage/share/applications/TengWangge.desktop
+          test -f /tmp/tw-stage/share/icons/hicolor/scalable/apps/tengwangge.svg
+
+  sanitizers:
+    name: Debug + ASan & UBSan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 5.15 dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake qtbase5-dev
+
+      - name: Configure & Build (ASan + UBSan preset)
+        run: |
+          cmake --preset debug-asan
+          cmake --build --preset debug-asan -j"$(nproc)"
+
+      - name: Run CTest under ASan & UBSan
+        run: ctest --preset debug-asan

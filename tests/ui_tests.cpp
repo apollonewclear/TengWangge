@@ -125,6 +125,7 @@ public:
     }
 
     void activated() override { ++activatedCalls; }
+    void pageActivated(const QString &pageId) override { seenPages.append(pageId); }
     void deactivated() override { ++deactivatedCalls; }
     void shutdown() override
     {
@@ -136,6 +137,7 @@ public:
     ToolServices services;
     NavigationLock lock;
     QPointer<QWidget> dialogParent;
+    QStringList seenPages;
     int initCalls = 0;
     int createCalls = 0;
     int activatedCalls = 0;
@@ -206,6 +208,7 @@ private slots:
     // ---- ToolHost 生命周期 ----
     void host_pagesAreLazyAndCreatedOnce();
     void host_lifecycleCallsAreBalanced();
+    void host_pageActivatedFiresOnToolAndTabSwitch();
     void host_failedInitOnlyAffectsThatTool();
     void host_throwingInitIsContained();
     void host_invalidPagesMarkToolUnavailable();
@@ -216,6 +219,7 @@ private slots:
     void window_selectsFirstToolAndSyncsRail();
     void window_initialToolIdSkipsDefaultToolCreation();
     void window_sessionStatePersistsAcrossRestarts();
+    void window_requestNavigationHonoursGate();
     void window_railClickAndKeyboardSwitchTools();
     void window_pageSelectionIsPerTool();
     void window_breadcrumbAndTitleFollowSelection();
@@ -322,6 +326,21 @@ void UiTests::host_lifecycleCallsAreBalanced()
     QVERIFY(f.window->selectTool(0));
     QCOMPARE(f.tools[0]->activatedCalls, 2);
     QCOMPARE(f.tools[1]->deactivatedCalls, 1);
+}
+
+void UiTests::host_pageActivatedFiresOnToolAndTabSwitch()
+{
+    Fixture f(threeTools());
+    QCOMPARE(f.tools[0]->seenPages, QStringList{QStringLiteral("p0")});
+    QVERIFY(f.window->selectPage(1));
+    QCOMPARE(f.tools[0]->seenPages, (QStringList{QStringLiteral("p0"), QStringLiteral("p1")}));
+
+    QVERIFY(f.window->selectTool(1));
+    QCOMPARE(f.tools[1]->seenPages, QStringList{QStringLiteral("p0")});
+
+    // 切回甲工具时应恢复其停留页 p1 并再次通知 pageActivated("p1")
+    QVERIFY(f.window->selectTool(0));
+    QCOMPARE(f.tools[0]->seenPages.last(), QStringLiteral("p1"));
 }
 
 void UiTests::host_failedInitOnlyAffectsThatTool()
@@ -473,6 +492,24 @@ void UiTests::window_sessionStatePersistsAcrossRestarts()
     QVERIFY(second.isLogPanelVisible());
     QCOMPARE(second.size(), QSize(1060, 680));
     QCOMPARE(tools2[0]->createCalls, 0);
+}
+
+void UiTests::window_requestNavigationHonoursGate()
+{
+    Fixture f(threeTools());
+    QCOMPARE(f.window->currentToolId(), QStringLiteral("alpha"));
+
+    // 正常受控跨工具 + 指定页面跳转
+    f.tools[0]->services.requestNavigation(QStringLiteral("beta"), QStringLiteral("p1"));
+    QCOMPARE(f.window->currentToolId(), QStringLiteral("beta"));
+    QCOMPARE(f.window->currentView()->currentPage(), 1);
+
+    // 导航锁持有期间拒绝跳转请求并写警告日志
+    f.tools[1]->lock = f.tools[1]->services.lockNavigation(QStringLiteral("正在计算"));
+    f.tools[1]->services.requestNavigation(QStringLiteral("alpha"), QStringLiteral("p0"));
+    QCOMPARE(f.window->currentToolId(), QStringLiteral("beta"));
+    QCOMPARE(f.window->currentView()->currentPage(), 1);
+    f.tools[1]->lock.release();
 }
 
 void UiTests::window_railClickAndKeyboardSwitchTools()

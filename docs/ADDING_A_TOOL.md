@@ -126,7 +126,9 @@ add_subdirectory(notes)
 - `initialize()` 里**不要创建 Widgets**，只做廉价的检查并保存 `ToolContext`。
 - `createPages()` 在第一次被选中时才调用，且只调用一次；多页面就返回多个 `ToolPage`，
   每个页面 `id` 在本工具内唯一。
-- 需要在被切换进来/出去时做事（比如开始/暂停刷新），重写 `activated()` / `deactivated()`。
+- 需要在被切换进来/出去时做事（比如开始/暂停刷新），重写 `activated()` / `deactivated()`；需要在本工具内部切换页签时响应，重写 `pageActivated(const QString &pageId)`。
+- 耗时后台任务优先使用 `tw::TaskRunner`（自动管理工作线程、`NavigationLock`、可中断休眠 `sleepMs()`、异常捕获与进度回传）。
+- 需要引导用户跳往其他工具或页面时，调用 `services.requestNavigation(toolId, pageId)`，由外壳统一检查导航锁后执行跳转。
 - 有计时器、线程、锁，就在 `shutdown()` 里收尾。`shutdown()` 之后平台才会销毁。
 - 工具失败不要抛到外面：在 `initialize()` 里返回 `false` 并写明原因；外壳也会兜住异常，但
   明确的错误信息对用户更有用。

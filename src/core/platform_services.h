@@ -32,6 +32,14 @@ public:
     // 给某个工具的带作用域句柄；toolId 为空表示平台自身。
     ToolServices servicesFor(const QString &toolId);
 
+    // 请求跳转到指定工具/页面（外壳在未锁定状态下响应）。
+    void requestNavigation(const QString &fromToolId, const QString &targetToolId,
+                           const QString &targetPageId = QString());
+
+signals:
+    void navigationRequested(const QString &fromToolId, const QString &targetToolId,
+                             const QString &targetPageId);
+
 private:
     DataPaths m_paths;
     LogBuffer m_log;
@@ -67,6 +75,10 @@ public:
     // 本工具独占的数据目录与配置文件路径，按需创建。
     QString dataDir(QString *error = nullptr) const;
     QString settingsFile(QString *error = nullptr) const;
+
+    // 受控跳转请求：不直接依赖 MainWindow 或目标工具，导航锁持有期间自动拒绝。
+    void requestNavigation(const QString &targetToolId,
+                           const QString &targetPageId = QString()) const;
 
 private:
     QPointer<PlatformServices> m_platform;

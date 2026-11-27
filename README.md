@@ -63,6 +63,20 @@ cmake --build build -j"$(nproc)"
 | `-DCMAKE_BUILD_TYPE=Debug` | Release | 默认 Release |
 | `-DTENGWANGGE_BUILD_TESTS=OFF` | ON | 不编译测试（不需要 Qt Test） |
 | `-DTENGWANGGE_WARNINGS_AS_ERRORS=ON` | OFF | 把 `-Wall -Wextra -Wpedantic` 的警告当作错误 |
+| `-DTENGWANGGE_ENABLE_SANITIZERS=ON` | OFF | 开启 AddressSanitizer 与 UndefinedBehaviorSanitizer |
+| `-DTENGWANGGE_PREFER_SYSTEM_QT=ON` | ON | Linux 下优先链接系统 `/usr/lib64` 或 `/usr/lib` 的 Qt 5.15 |
+
+也支持 CMake Presets（CMake ≥ 3.21）：
+
+```bash
+cmake --preset release && cmake --build --preset release -j"$(nproc)" && ctest --preset release
+```
+
+在麒麟 KylinSec / openEuler 上构建 RPM 安装包（需安装 `rpm-build`）：
+
+```bash
+./packaging/build_rpm.sh
+```
 
 Qt 不在默认路径时：`cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/Qt5.15`。
 

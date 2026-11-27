@@ -1,0 +1,63 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "release",
+      "displayName": "Production Release (Kylin / Linux)",
+      "description": "Release build preferring system Qt5 with -Werror and full test suite",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "TENGWANGGE_BUILD_TESTS": "ON",
+        "TENGWANGGE_WARNINGS_AS_ERRORS": "ON",
+        "TENGWANGGE_PREFER_SYSTEM_QT": "ON"
+      }
+    },
+    {
+      "name": "debug-asan",
+      "displayName": "Debug with ASan + UBSan",
+      "description": "Debug build with AddressSanitizer, UndefinedBehaviorSanitizer, and -Werror",
+      "binaryDir": "${sourceDir}/build/debug-asan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "TENGWANGGE_BUILD_TESTS": "ON",
+        "TENGWANGGE_WARNINGS_AS_ERRORS": "ON",
+        "TENGWANGGE_ENABLE_SANITIZERS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "debug-asan",
+      "configurePreset": "debug-asan"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "debug-asan",
+      "configurePreset": "debug-asan",
+      "environment": {
+        "ASAN_OPTIONS": "detect_leaks=0"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

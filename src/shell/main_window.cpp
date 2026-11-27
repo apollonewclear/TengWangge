@@ -303,6 +303,24 @@ void MainWindow::connectServices()
             refreshStatus();
     });
     connect(m_platform->gate(), &NavigationGate::changed, this, &MainWindow::refreshNavigationLock);
+    connect(m_platform.get(), &PlatformServices::navigationRequested, this,
+            [this](const QString &fromToolId, const QString &targetToolId, const QString &targetPageId) {
+                if (navigationLocked()) {
+                    m_platform->servicesFor(fromToolId).logWarning(
+                        QStringLiteral("导航已锁定，已忽略跳转请求：%1")
+                            .arg(targetToolId.isEmpty() ? targetPageId : targetToolId));
+                    return;
+                }
+                if (!targetToolId.isEmpty() && !selectToolById(targetToolId)) {
+                    m_platform->servicesFor(fromToolId).logWarning(
+                        QStringLiteral("请求跳转的目标工具不存在：%1").arg(targetToolId));
+                    return;
+                }
+                if (!targetPageId.isEmpty() && !selectPageById(targetPageId)) {
+                    m_platform->servicesFor(fromToolId).logWarning(
+                        QStringLiteral("请求跳转的目标页面不存在：%1").arg(targetPageId));
+                }
+            });
     connect(m_status->logToggle(), &QPushButton::toggled, this,
             [this](bool on) { setLogPanelVisible(on); });
     connect(m_topLogBtn, &QToolButton::toggled, this,

@@ -165,8 +165,34 @@ bool ToolHost::createView(int index)
         view->addPage(page.info, page.widget);
     m_stack->addWidget(view);
     slot.view = view;
+    connect(view, &ToolView::currentPageChanged, this, [this, index](int) {
+        if (index >= 0 && index < m_slots.size() && m_slots.at(index).active)
+            notifyPageActivated(index);
+    });
     emit viewCreated(index);
     return true;
+}
+
+void ToolHost::notifyPageActivated(int index)
+{
+    if (index < 0 || index >= m_slots.size())
+        return;
+    const Slot &slot = m_slots.at(index);
+    ToolView *v = slot.view.data();
+    if (!slot.active || !v || v->currentPage() < 0)
+        return;
+    const QString pageId = v->pageInfo(v->currentPage()).id;
+    const ToolInfo curInfo = m_registry->infoAt(index);
+    try {
+        m_registry->at(index)->pageActivated(pageId);
+    } catch (const std::exception &e) {
+        m_platform->servicesFor(QString()).logError(
+            QStringLiteral("工具“%1”页面激活回调异常：%2")
+                .arg(curInfo.title, describeException(e)));
+    } catch (...) {
+        m_platform->servicesFor(QString()).logError(
+            QStringLiteral("工具“%1”页面激活回调发生未知异常").arg(curInfo.title));
+    }
 }
 
 QWidget *ToolHost::ensureUnavailableView(int index)
@@ -242,6 +268,7 @@ bool ToolHost::activate(int index)
                 m_platform->servicesFor(QString()).logError(
                     QStringLiteral("工具“%1”激活回调发生未知异常").arg(curInfo.title));
             }
+            notifyPageActivated(index);
         }
     } else {
         m_stack->setCurrentWidget(ensureUnavailableView(index));

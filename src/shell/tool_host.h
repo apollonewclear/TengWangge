@@ -66,6 +66,7 @@ private:
 
     bool createView(int index);
     void fail(int index, const QString &message);
+    void notifyPageActivated(int index);
     QWidget *ensureUnavailableView(int index);
 
     ToolRegistry *m_registry;

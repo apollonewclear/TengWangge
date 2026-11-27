@@ -13,6 +13,7 @@ public:
     bool initialize(const ToolContext &context, QString *error) override;
     QVector<ToolPage> createPages() override;
     void activated() override;
+    void pageActivated(const QString &pageId) override;
 
 private:
     ToolContext m_context;

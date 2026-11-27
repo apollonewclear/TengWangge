@@ -46,6 +46,7 @@ public:
     virtual QVector<ToolPage> createPages() = 0;
 
     virtual void activated() {}
+    virtual void pageActivated(const QString &pageId) { (void)pageId; }
     virtual void deactivated() {}
     virtual void shutdown() {}
 };

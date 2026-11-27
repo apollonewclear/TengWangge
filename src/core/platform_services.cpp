@@ -18,6 +18,12 @@ ToolServices PlatformServices::servicesFor(const QString &toolId)
     return ToolServices(this, toolId);
 }
 
+void PlatformServices::requestNavigation(const QString &fromToolId, const QString &targetToolId,
+                                         const QString &targetPageId)
+{
+    emit navigationRequested(fromToolId, targetToolId, targetPageId);
+}
+
 ToolServices::ToolServices(PlatformServices *platform, const QString &toolId)
     : m_platform(platform)
     , m_toolId(toolId)
@@ -106,6 +112,24 @@ QString ToolServices::settingsFile(QString *error) const
         return {};
     }
     return m_platform->paths().toolSettingsFile(m_toolId, error);
+}
+
+void ToolServices::requestNavigation(const QString &targetToolId, const QString &targetPageId) const
+{
+    PlatformServices *platform = m_platform.data();
+    if (!platform)
+        return;
+    if (QThread::currentThread() == platform->thread()) {
+        platform->requestNavigation(m_toolId, targetToolId, targetPageId);
+        return;
+    }
+    const QString fromToolId = m_toolId;
+    QMetaObject::invokeMethod(
+        platform,
+        [platform, fromToolId, targetToolId, targetPageId]() {
+            platform->requestNavigation(fromToolId, targetToolId, targetPageId);
+        },
+        Qt::QueuedConnection);
 }
 
 } // namespace tw
