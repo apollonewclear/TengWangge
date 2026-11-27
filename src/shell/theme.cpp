@@ -4,7 +4,6 @@
 
 static void initShellResources()
 {
-    // 资源在静态库里，链接器可能丢弃未引用的 qrc 目标文件，所以显式初始化。
     Q_INIT_RESOURCE(tengwangge_shell);
 }
 
@@ -49,12 +48,14 @@ QMap<QString, QString> Theme::tokens() const
     color("chromeRaised", chromeRaised);
     color("chromeHover", chromeHover);
     color("chromeSelected", chromeSelected);
+    color("chromeSelectedBorder", chromeSelectedBorder);
     color("chromeBorder", chromeBorder);
     color("chromeText", chromeText);
     color("chromeMuted", chromeMuted);
     color("chromeDisabled", chromeDisabled);
     color("accent", accent);
     color("teal", teal);
+    color("emerald", emerald);
     color("surface", surface);
     color("panel", panel);
     color("panelAlt", panelAlt);

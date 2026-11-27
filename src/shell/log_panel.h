@@ -65,6 +65,7 @@ private:
     QString m_toolId;
     QString m_toolTitle;
     TitleResolver m_resolver;
+    QFrame *m_header = nullptr;
     QLabel *m_title = nullptr;
     QLineEdit *m_search = nullptr;
     QComboBox *m_levelFilter = nullptr;

@@ -3,17 +3,19 @@
 #include "core/navigation_gate.h"
 #include "core/status_board.h"
 
+#include <QDateTime>
 #include <QFrame>
 
 class QLabel;
 class QPushButton;
+class QTimer;
 
 namespace tw {
 
 class ElidedLabel;
 
-// 状态栏内容：状态色点 + 状态文字（过长省略）+ 导航锁定提示 + 日志开关。
-// 状态用 QSS 属性 state 着色，除了颜色，文字本身也带含义，不单靠颜色区分。
+// 底部浅灰状态栏：左侧状态色点 + 状态文字 + 导航锁定提示，
+// 右侧实时刷新“用户:<user> 启动时间:... 运行时长:HH:mm:ss”（1:1 对齐参考图状态栏样式）+ 日志开关。
 class StatusStrip : public QFrame
 {
     Q_OBJECT
@@ -33,7 +35,12 @@ public:
     QPushButton *logToggle() const { return m_logToggle; }
 
 private:
+    void updateUptime();
+
     StatusMessage m_status;
+    QDateTime m_startTime;
+    QString m_userName;
+    QTimer *m_uptimeTimer = nullptr;
     QLabel *m_dot = nullptr;
     ElidedLabel *m_text = nullptr;
     QLabel *m_lock = nullptr;

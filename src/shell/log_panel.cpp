@@ -3,6 +3,7 @@
 #include "shell/icon_factory.h"
 #include "shell/theme.h"
 
+#include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDateTime>
@@ -12,6 +13,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScrollBar>
@@ -20,6 +22,20 @@
 #include <QVBoxLayout>
 
 namespace tw {
+namespace {
+
+QString englishLevelTag(LogLevel level)
+{
+    switch (level) {
+    case LogLevel::Info: return QStringLiteral("INFO");
+    case LogLevel::Success: return QStringLiteral("INFO");
+    case LogLevel::Warning: return QStringLiteral("WARN");
+    case LogLevel::Error: return QStringLiteral("ERROR");
+    }
+    return QStringLiteral("INFO");
+}
+
+} // namespace
 
 LogPanel::LogPanel(LogBuffer *buffer, QWidget *parent)
     : QFrame(parent)
@@ -31,15 +47,17 @@ LogPanel::LogPanel(LogBuffer *buffer, QWidget *parent)
     setAttribute(Qt::WA_StyledBackground, true);
     setAccessibleName(QStringLiteral("日志面板"));
 
+    // 1:1 对齐参考图底部消息日志区：紧凑浅灰外边距包裹纯白框线日志框，默认不展示厚重标题栏
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(8, 2, 8, 6);
     layout->setSpacing(0);
 
-    auto *header = new QFrame;
-    header->setObjectName(QStringLiteral("logHeader"));
-    auto *headerLayout = new QHBoxLayout(header);
-    headerLayout->setContentsMargins(10, 4, 8, 4);
-    headerLayout->setSpacing(8);
+    m_header = new QFrame;
+    m_header->setObjectName(QStringLiteral("logHeader"));
+    m_header->hide(); // 默认隐藏筛选栏以保持工业极简观感，可通过右键菜单随时呼出
+    auto *headerLayout = new QHBoxLayout(m_header);
+    headerLayout->setContentsMargins(8, 3, 6, 3);
+    headerLayout->setSpacing(6);
 
     m_title = new QLabel;
     m_title->setObjectName(QStringLiteral("logTitle"));
@@ -48,7 +66,7 @@ LogPanel::LogPanel(LogBuffer *buffer, QWidget *parent)
     m_search->setObjectName(QStringLiteral("logSearch"));
     m_search->setPlaceholderText(QStringLiteral("筛选日志关键字…"));
     m_search->setClearButtonEnabled(true);
-    m_search->setFixedWidth(176);
+    m_search->setFixedWidth(168);
     m_search->setFocusPolicy(Qt::ClickFocus);
     m_search->setAccessibleName(QStringLiteral("日志关键字筛选"));
 
@@ -72,7 +90,7 @@ LogPanel::LogPanel(LogBuffer *buffer, QWidget *parent)
 
     m_clear = new QPushButton(QStringLiteral("清空"));
     m_clear->setObjectName(QStringLiteral("logClear"));
-    m_clear->setToolTip(QStringLiteral("清空平台日志缓冲（所有工具的日志）"));
+    m_clear->setToolTip(QStringLiteral("清空消息日志"));
 
     m_close = new QPushButton(QStringLiteral("收起"));
     m_close->setObjectName(QStringLiteral("logClose"));
@@ -86,7 +104,7 @@ LogPanel::LogPanel(LogBuffer *buffer, QWidget *parent)
     headerLayout->addWidget(m_export);
     headerLayout->addWidget(m_clear);
     headerLayout->addWidget(m_close);
-    layout->addWidget(header);
+    layout->addWidget(m_header);
 
     m_view = new QPlainTextEdit;
     m_view->setObjectName(QStringLiteral("logView"));
@@ -94,7 +112,34 @@ LogPanel::LogPanel(LogBuffer *buffer, QWidget *parent)
     m_view->setLineWrapMode(QPlainTextEdit::NoWrap);
     m_view->setMaximumBlockCount(2000);
     m_view->setAccessibleName(QStringLiteral("日志内容"));
+    m_view->setContextMenuPolicy(Qt::CustomContextMenu);
     layout->addWidget(m_view, 1);
+
+    connect(m_view, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        QMenu *menu = m_view->createStandardContextMenu();
+        menu->addSeparator();
+        QAction *toggleFilter = menu->addAction(
+            m_header->isVisible() ? QStringLiteral("隐藏日志筛选栏") : QStringLiteral("显示日志筛选栏"));
+        connect(toggleFilter, &QAction::triggered, this,
+                [this] { m_header->setVisible(!m_header->isVisible()); });
+
+        QAction *toggleAll = menu->addAction(QStringLiteral("显示全部工具日志"));
+        toggleAll->setCheckable(true);
+        toggleAll->setChecked(showsAllTools());
+        connect(toggleAll, &QAction::toggled, this, &LogPanel::setShowsAllTools);
+
+        QAction *exp = menu->addAction(QStringLiteral("导出当前日志…"));
+        connect(exp, &QAction::triggered, this, &LogPanel::promptExport);
+
+        QAction *clr = menu->addAction(QStringLiteral("清空日志"));
+        connect(clr, &QAction::triggered, this, [this] { m_buffer->clear(); });
+
+        QAction *hidePanel = menu->addAction(QStringLiteral("收起日志面板 (Ctrl+L)"));
+        connect(hidePanel, &QAction::triggered, this, &LogPanel::closeRequested);
+
+        menu->exec(m_view->mapToGlobal(pos));
+        delete menu;
+    });
 
     connect(m_search, &QLineEdit::textChanged, this, [this] { reload(); });
     connect(m_levelFilter, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
@@ -216,20 +261,16 @@ QString LogPanel::plainText() const
 
 QString LogPanel::formatLine(const LogEntry &entry) const
 {
+    // 1:1 对齐参考图红框格式：[INFO][2026/11/11 10:35:25] 消息正文
     const QString stamp = entry.time.toString(QStringLiteral("yyyy/MM/dd HH:mm:ss"));
-    const QString level = LogBuffer::levelName(entry.level);
+    const QString level = englishLevelTag(entry.level);
 
-    if (showsAllTools()) {
-        QString source = QStringLiteral("平台");
-        if (!entry.toolId.isEmpty())
-            source = m_resolver ? m_resolver(entry.toolId) : entry.toolId;
+    if (showsAllTools() && !entry.toolId.isEmpty()) {
+        QString source = m_resolver ? m_resolver(entry.toolId) : entry.toolId;
         if (source.isEmpty())
             source = entry.toolId;
         return QStringLiteral("[%1][%2] [%3] %4").arg(level, stamp, source, entry.message);
     }
-
-    if (entry.toolId.isEmpty())
-        return QStringLiteral("[%1][%2] [平台] %3").arg(level, stamp, entry.message);
     return QStringLiteral("[%1][%2] %3").arg(level, stamp, entry.message);
 }
 

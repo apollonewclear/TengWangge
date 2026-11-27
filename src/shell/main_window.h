@@ -26,9 +26,9 @@ class ToolRail;
 class ToolView;
 
 // 外壳主窗口：两层导航。
-//   第一层  左侧工具栏（ToolRail）选择“用哪个工具”；
-//   第二层  工具自己的页面条（ToolView 内的 QTabBar）选择“工具里的哪一页”。
-// 顶栏显示“工具 › 页面”，底部是状态栏和可收起的日志面板。
+//   第一层  顶部大图标模块栏（ToolRail）选择“用哪个工具”；
+//   第二层  工具自己的紧凑页面条（ToolView 内的 QTabBar，单页面自动隐藏）选择“工具里的哪一页”。
+// 底部是常驻极简消息框与实时运行时长状态栏。
 //
 // MainWindow 拥有 PlatformServices 和 ToolRegistry，并保证销毁顺序：
 // 先让工具 shutdown、销毁所有页面，再销毁工具对象，最后销毁平台服务。
@@ -111,6 +111,7 @@ private:
     QLabel *m_crumbPage = nullptr;
     QToolButton *m_topLogBtn = nullptr;
     QToolButton *m_topHelpBtn = nullptr;
+    QToolButton *m_topExitBtn = nullptr;
 
     QPointer<QWidget> m_focusBeforeLock;
     std::function<bool(const QString &)> m_closeGuard;

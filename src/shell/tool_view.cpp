@@ -27,11 +27,12 @@ ToolView::ToolView(const ToolInfo &info, QWidget *parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    auto *strip = new QFrame;
-    strip->setObjectName(QStringLiteral("pageStrip"));
-    strip->setFixedHeight(42);
-    auto *stripLayout = new QHBoxLayout(strip);
-    stripLayout->setContentsMargins(10, 0, 10, 0);
+    m_strip = new QFrame;
+    m_strip->setObjectName(QStringLiteral("pageStrip"));
+    m_strip->setFixedHeight(32);
+    m_strip->hide(); // 单页面工具自动隐藏页签条，多页面时自动显示
+    auto *stripLayout = new QHBoxLayout(m_strip);
+    stripLayout->setContentsMargins(8, 0, 8, 0);
     stripLayout->setSpacing(0);
 
     m_tabs = new QTabBar;
@@ -40,15 +41,14 @@ ToolView::ToolView(const ToolInfo &info, QWidget *parent)
     m_tabs->setDrawBase(false);
     m_tabs->setExpanding(false);
     m_tabs->setElideMode(Qt::ElideNone);
-    m_tabs->setUsesScrollButtons(true);
-    m_tabs->setIconSize(QSize(16, 16));
+    m_tabs->setUsesScrollButtons(false);
+    m_tabs->setIconSize(QSize(14, 14));
     m_tabs->setFocusPolicy(Qt::StrongFocus);
     m_tabs->setChangeCurrentOnDrag(false);
     m_tabs->installEventFilter(this);
     m_tabs->setToolTip(QStringLiteral("左右方向键切换页面，Ctrl+PageUp / Ctrl+PageDown 也可以"));
-    stripLayout->addWidget(m_tabs);
-    stripLayout->addStretch(1);
-    layout->addWidget(strip);
+    stripLayout->addWidget(m_tabs, 1);
+    layout->addWidget(m_strip);
 
     m_stack = new QStackedWidget;
     m_stack->setObjectName(QStringLiteral("pageStack"));
@@ -62,8 +62,6 @@ ToolView::ToolView(const ToolInfo &info, QWidget *parent)
     });
 }
 
-// QSS 的 :focus::tab:selected 在 Qt 5.15 下会错误命中非选中页签，
-// 所以用属性 tabFocus 自己表达“页面条拥有键盘焦点”。
 bool ToolView::eventFilter(QObject *watched, QEvent *event)
 {
     if (watched == m_tabs
@@ -80,7 +78,6 @@ void ToolView::addPage(const PageInfo &info, QWidget *widget)
     m_pages.append(info);
     m_pageWidgets.append(widget);
 
-    // 外包无边框 QScrollArea，防止小窗口或展开日志面板时业务表单被截断。
     auto *scroll = new QScrollArea;
     scroll->setObjectName(QStringLiteral("pageScrollArea"));
     if (scroll->viewport())
@@ -93,6 +90,7 @@ void ToolView::addPage(const PageInfo &info, QWidget *widget)
 
     const int tab = m_tabs->addTab(info.title);
     m_tabs->setTabToolTip(tab, info.summary.isEmpty() ? info.title : info.summary);
+    m_strip->setVisible(m_pages.size() > 1);
     refreshTabIcons();
 }
 
@@ -104,10 +102,13 @@ void ToolView::refreshTabIcons()
         const QString &key = m_pages.at(i).iconKey;
         if (key.isEmpty())
             continue;
-        const bool selected = (i == active) && m_tabs->isEnabled();
-        const QIcon icon = selected
-            ? IconFactory::icon(key, theme.panel, theme.panel, theme.disabledText, theme.panel)
-            : IconFactory::icon(key, theme.primary, theme.panel, theme.disabledText, theme.accent);
+        const bool enabled = m_tabs->isEnabled();
+        const bool selected = (i == active) && enabled;
+        const QIcon icon = !enabled
+            ? IconFactory::icon(key, theme.disabledText, theme.disabledText, theme.disabledText, theme.disabledText)
+            : (selected
+                   ? IconFactory::icon(key, theme.primary, theme.primary, theme.disabledText, theme.accent)
+                   : IconFactory::icon(key, theme.textMuted, theme.primary, theme.disabledText, theme.accent));
         m_tabs->setTabIcon(i, icon);
     }
 }

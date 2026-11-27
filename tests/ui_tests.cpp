@@ -830,8 +830,13 @@ void UiTests::log_clearAndToggle()
 {
     Fixture f(threeTools());
     f.show();
-    QVERIFY(!f.window->isLogPanelVisible());
+    // 底部消息日志区默认常驻展开，方便实时查看平台与工具输出
+    QVERIFY(f.window->isLogPanelVisible());
     QPushButton *toggle = f.window->statusStrip()->logToggle();
+    QVERIFY(toggle->isChecked());
+
+    toggle->click();
+    QVERIFY(!f.window->isLogPanelVisible());
     QVERIFY(!toggle->isChecked());
 
     toggle->click();
@@ -866,12 +871,17 @@ void UiTests::keyboard_toolAndPageShortcuts()
     f.show();
     QTest::keyClick(f.window.get(), Qt::Key_3, Qt::ControlModifier);
     QCOMPARE(f.window->currentToolIndex(), 2);
+    // 单页面工具（丙工具 pageCount=1）自动隐藏顶部二层页签条
+    QVERIFY(!f.window->currentView()->tabBar()->isVisible());
+
     QTest::keyClick(f.window.get(), Qt::Key_9, Qt::ControlModifier); // 不存在的第 9 个：忽略
     QCOMPARE(f.window->currentToolIndex(), 2);
     QTest::keyClick(f.window.get(), Qt::Key_Up, Qt::AltModifier);
     QCOMPARE(f.window->currentToolIndex(), 1);
     QTest::keyClick(f.window.get(), Qt::Key_Up, Qt::AltModifier);
     QCOMPARE(f.window->currentToolIndex(), 0);
+    // 多页面工具（甲工具 pageCount=2）自动显示顶部二层页签条
+    QVERIFY(f.window->currentView()->tabBar()->isVisible());
     QTest::keyClick(f.window.get(), Qt::Key_Up, Qt::AltModifier); // 到头不循环
     QCOMPARE(f.window->currentToolIndex(), 0);
 
@@ -882,10 +892,11 @@ void UiTests::keyboard_toolAndPageShortcuts()
     QTest::keyClick(f.window.get(), Qt::Key_PageUp, Qt::ControlModifier);
     QCOMPARE(f.window->currentView()->currentPage(), 0);
 
-    QTest::keyClick(f.window.get(), Qt::Key_L, Qt::ControlModifier);
     QVERIFY(f.window->isLogPanelVisible());
     QTest::keyClick(f.window.get(), Qt::Key_L, Qt::ControlModifier);
     QVERIFY(!f.window->isLogPanelVisible());
+    QTest::keyClick(f.window.get(), Qt::Key_L, Qt::ControlModifier);
+    QVERIFY(f.window->isLogPanelVisible());
 }
 
 void UiTests::keyboard_f6CyclesFocusZones()

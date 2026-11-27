@@ -6,6 +6,7 @@
 #include <QWidget>
 
 class QEvent;
+class QFrame;
 class QStackedWidget;
 class QTabBar;
 
@@ -52,6 +53,7 @@ private:
     ToolInfo m_info;
     QVector<PageInfo> m_pages;
     QVector<QWidget *> m_pageWidgets;
+    QFrame *m_strip = nullptr;
     QTabBar *m_tabs = nullptr;
     QStackedWidget *m_stack = nullptr;
 };

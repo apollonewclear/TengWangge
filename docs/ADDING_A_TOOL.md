@@ -161,30 +161,36 @@ const QString dir = services.dataDir(&error);   // <数据根>/tools/<工具id>/
 - 数据只写进 `dataDir()` 返回的目录，不要自己拼路径，更不要写系统目录。
 - 不要在代码或日志里放密钥、令牌或真实凭据。
 
-## 5. 样式：用 `role` 属性，不要写私有 QSS
+## 5. 样式与页面脚手架：用 `page_chrome` 与 `role` 属性，不要写私有 QSS
 
-外壳的主题已经覆盖了工具页面里常用的控件。给控件设置 `role` 属性即可：
+外壳提供 `src/shell/page_chrome.h`（命名空间 `tw::ui`）来快速搭建标准的“左树/表 + 五圆点分割条 + 右侧动作栏与网格表格”工业工作台布局：
+
+- `ui::makeSplitter(Qt::Horizontal)`：带纵向五圆点（`⋮`）抓手的左右分割器
+- `ui::makeActionButton(text, iconKey)`：白底圆角边框 + `16×16` 彩色小图标的操作按钮（如 `refresh`、`add`、`update`、`delete`）
+- `ui::configureDataTable(table, headers)`：统一配置斑马纹、浅灰网格线、整行钢蓝色选中高亮与表头样式的 `QTableWidget`
+
+给控件设置 `role` 属性即可套用主题：
 
 | 控件 | `role` 值 |
 | --- | --- |
-| `QLabel` | `pageTitle` 页面标题、`pageSubtitle` 副标题、`sectionTitle` 分组标题、`fieldLabel` 字段名、`hint` 提示、`value` 等宽取值、`code` 钢蓝色编码、`pill` 青色状态胶囊 |
-| `QFrame` | `card` 白底框线卡片、`toolbar` 顶部浅灰操作栏、`tableHeader` 表头行、`tableRow` / `tableRowAlt` 表格数据行 |
-| `QPushButton` | `primary` 主操作、`teal` 青色胶囊按钮、`danger` 危险操作；不设置则为白底框线普通按钮 |
+| `QLabel` | `paneTitle` 分栏小标题、`pageTitle` 页面标题、`pageSubtitle` 副标题、`sectionTitle` 分组标题、`fieldLabel` 字段名、`hint` 提示、`value` 等宽取值、`code` 钢蓝色编码、`pill` 青色胶囊、`pillDanger` 红色异常胶囊 |
+| `QFrame` | `card` 白底框线卡片、`toolbar` 顶部浅灰操作栏 |
+| `QPushButton` | 默认即为清爽白底框线按钮（推荐配合 `ui::makeActionButton`）；也支持 `primary`、`teal`、`danger` |
 
 ```cpp
-label->setProperty("role", QStringLiteral("pageTitle"));
-button->setProperty("role", QStringLiteral("primary"));
+QLabel *title = ui::makeLabel(QStringLiteral("参数清单"), "paneTitle");
+QPushButton *refreshBtn = ui::makeActionButton(QStringLiteral("刷新"), QStringLiteral("refresh"));
 ```
 
-`QLineEdit`、`QCheckBox`、`QProgressBar`、滚动条、对话框等无需设置，自动套用主题。需要新的
-通用外观时，改 `src/shell/resources/theme.qss`（颜色改 `src/shell/theme.cpp`），而不是在某个
-工具里 `setStyleSheet`，这样所有工具保持一致。
+`QLineEdit`、`QTreeWidget`、`QTableWidget`、`QCheckBox`、`QProgressBar`、滚动条、对话框等无需额外设置，自动套用主题。需要新的通用外观时，改 `src/shell/resources/theme.qss`（颜色改 `src/shell/theme.cpp`），而不是在某个工具里 `setStyleSheet`，这样所有工具保持一致。
+
+> 提示：若工具 `createPages()` 只返回 **1 个页面**，外壳会自动隐藏二层页签条，让页面直接占满顶部大图标模块栏下方空间；返回 **2 个及以上页面**时自动显示紧凑页签条。
 
 ## 6. 图标
 
-`iconKey` 取自 `IconFactory::knownKeys()`：`overview task status info environment log lock refresh help export`。
-未知的 key 显示通用方块图标。新增图标：在 `src/shell/icon_factory.cpp` 的 `drawGlyph()`
-里加一个分支（16×16 坐标系的线性图形），并把 key 加进 `knownKeys()`；
+`iconKey` 取自 `IconFactory::knownKeys()`：`overview task status scan info environment log lock refresh add update delete help exit export`。
+未知的 key 显示通用双色方块图标。新增图标：在 `src/shell/icon_factory.cpp` 的 `drawGlyph()`
+里加一个分支（`32×32` 归一化坐标系的精细双色/多色矢量图形），并把 key 加进 `knownKeys()`；
 `theme_iconsRenderForAllKnownKeys` 会校验每个 key 都画出了像素。
 
 ## 7. 键盘

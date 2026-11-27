@@ -3,6 +3,7 @@
 #include "core/app_info.h"
 #include "shell/icon_factory.h"
 #include "shell/log_panel.h"
+#include "shell/page_chrome.h"
 #include "shell/status_strip.h"
 #include "shell/theme.h"
 #include "shell/tool_host.h"
@@ -15,68 +16,19 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
-#include <QPainter>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QShortcut>
 #include <QSplitter>
-#include <QSplitterHandle>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <QSysInfo>
 #include <QTabBar>
 #include <QToolButton>
 #include <QVBoxLayout>
-#include <QVariant>
 
 namespace tw {
 namespace {
-
-// 带居中五圆点抓手的上下分割条，贴合工业工作台消息日志区拖拽条视觉。
-class DottedSplitterHandle final : public QSplitterHandle
-{
-public:
-    DottedSplitterHandle(Qt::Orientation orientation, QSplitter *parent)
-        : QSplitterHandle(orientation, parent)
-    {
-    }
-
-protected:
-    void paintEvent(QPaintEvent *event) override
-    {
-        QSplitterHandle::paintEvent(event);
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing, true);
-        p.setPen(Qt::NoPen);
-        p.setBrush(Theme::workbench().chromeDisabled);
-        const int cy = height() / 2;
-        const int cx = width() / 2;
-        for (int i = -2; i <= 2; ++i)
-            p.drawEllipse(QPointF(cx + i * 6.0, cy), 1.3, 1.3);
-    }
-};
-
-class DottedSplitter final : public QSplitter
-{
-public:
-    explicit DottedSplitter(Qt::Orientation orientation, QWidget *parent = nullptr)
-        : QSplitter(orientation, parent)
-    {
-    }
-
-protected:
-    QSplitterHandle *createHandle() override
-    {
-        return new DottedSplitterHandle(orientation(), this);
-    }
-};
-
-QFrame *verticalSeparator(const QString &name, int height)
-{
-    auto *line = new QFrame;
-    line->setObjectName(name);
-    line->setFixedSize(1, height);
-    return line;
-}
 
 QWidget *firstFocusable(QWidget *root)
 {
@@ -107,7 +59,7 @@ MainWindow::MainWindow(std::unique_ptr<PlatformServices> platform, ToolRegistry 
     setObjectName(QStringLiteral("mainWindow"));
     setWindowTitle(AppInfo::productName());
     setWindowIcon(IconFactory::appIcon());
-    resize(1180, 760);
+    resize(1180, 740);
     setMinimumSize(900, 560);
     setStyleSheet(Theme::workbench().styleSheet());
 
@@ -117,8 +69,8 @@ MainWindow::MainWindow(std::unique_ptr<PlatformServices> platform, ToolRegistry 
     connectServices();
 
     ToolServices self = m_platform->servicesFor(QString());
-    self.logInfo(QStringLiteral("%1 %2 启动").arg(AppInfo::productName(), AppInfo::version()));
-    self.logInfo(QStringLiteral("数据目录：%1").arg(m_platform->paths().root()));
+    self.logInfo(QStringLiteral("平台启动完成：%1 %2").arg(AppInfo::productName(), AppInfo::version()));
+    self.logInfo(QStringLiteral("隔离数据目录：%1").arg(m_platform->paths().root()));
 
     m_host->initializeAll();
 
@@ -130,7 +82,7 @@ MainWindow::MainWindow(std::unique_ptr<PlatformServices> platform, ToolRegistry 
         if (m_host->state(i) == ToolHost::State::Failed)
             m_rail->setAvailable(i, false, m_host->error(i));
     }
-    self.logInfo(QStringLiteral("已加载 %1 个工具").arg(infos.size()));
+    self.logInfo(QStringLiteral("加载全部工具模块完成（共 %1 项）").arg(infos.size()));
 
     installShortcuts();
 
@@ -162,6 +114,10 @@ MainWindow::MainWindow(std::unique_ptr<PlatformServices> platform, ToolRegistry 
     }
     selectTool(first);
     refreshNavigationLock();
+
+    // 默认常驻紧凑消息日志区（~110px，1:1 对齐参考图底部常驻消息框）
+    setLogPanelVisible(true);
+    m_splitter->setSizes({600, 112});
 }
 
 MainWindow::~MainWindow()
@@ -187,107 +143,76 @@ void MainWindow::buildUi()
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // ---- 顶部浅色工具带 ----
+    // ---- 68px 顶部合一 Ribbon 大图标工具带（左：模块图标切换；右：日志/帮助/退出）----
     auto *top = new QFrame;
     top->setObjectName(QStringLiteral("topBar"));
-    top->setFixedHeight(54);
+    top->setFixedHeight(68);
     auto *topLayout = new QHBoxLayout(top);
-    topLayout->setContentsMargins(12, 0, 12, 0);
-    topLayout->setSpacing(10);
+    topLayout->setContentsMargins(10, 4, 14, 4);
+    topLayout->setSpacing(6);
 
-    auto *mark = new QLabel(QStringLiteral("滕"));
-    mark->setObjectName(QStringLiteral("brandMark"));
-    mark->setFixedSize(30, 30);
-    mark->setAlignment(Qt::AlignCenter);
-    auto *name = new QLabel(AppInfo::productName());
-    name->setObjectName(QStringLiteral("brandName"));
-    auto *sub = new QLabel(QStringLiteral("工具箱平台"));
-    sub->setObjectName(QStringLiteral("brandSub"));
+    m_rail = new ToolRail;
+    topLayout->addWidget(m_rail, 0, Qt::AlignVCenter);
 
-    m_crumbTool = new QLabel;
+    // 保留无障碍/状态元数据标签（隐藏显示，避免干扰极简大图标工具带，同时兼容路径查询）
+    m_crumbTool = new QLabel(top);
     m_crumbTool->setObjectName(QStringLiteral("breadcrumbTool"));
-    m_crumbSep = new QLabel(QStringLiteral("›"));
+    m_crumbTool->hide();
+    m_crumbSep = new QLabel(QStringLiteral("›"), top);
     m_crumbSep->setObjectName(QStringLiteral("breadcrumbSep"));
-    m_crumbPage = new QLabel;
+    m_crumbSep->hide();
+    m_crumbPage = new QLabel(top);
     m_crumbPage->setObjectName(QStringLiteral("breadcrumbPage"));
+    m_crumbPage->hide();
 
-    // 右侧上图下文快捷操作按钮（NoFocus，不改变 F6 焦点环顺序）
-    m_topLogBtn = new QToolButton;
-    m_topLogBtn->setObjectName(QStringLiteral("topActionBtn"));
-    m_topLogBtn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-    m_topLogBtn->setIcon(IconFactory::icon(QStringLiteral("log"), theme.primary, theme.primary,
-                                           theme.disabledText, theme.accent));
-    m_topLogBtn->setIconSize(QSize(18, 18));
-    m_topLogBtn->setText(QStringLiteral("消息日志"));
-    m_topLogBtn->setCheckable(true);
-    m_topLogBtn->setFocusPolicy(Qt::NoFocus);
-    m_topLogBtn->setToolTip(QStringLiteral("显示/隐藏底部消息日志 (Ctrl+L)"));
+    auto makeRibbonAction = [&](const QString &text, const QString &iconKey,
+                                const QString &tip, bool checkable) {
+        auto *btn = new QToolButton;
+        btn->setObjectName(QStringLiteral("topActionBtn"));
+        btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+        btn->setIcon(IconFactory::icon(iconKey, theme.primary, theme.primary,
+                                       theme.disabledText, theme.accent));
+        btn->setIconSize(QSize(28, 28));
+        btn->setFixedSize(76, 58);
+        btn->setText(text);
+        btn->setCheckable(checkable);
+        btn->setFocusPolicy(Qt::NoFocus);
+        btn->setToolTip(tip);
+        return btn;
+    };
 
-    m_topHelpBtn = new QToolButton;
-    m_topHelpBtn->setObjectName(QStringLiteral("topActionBtn"));
-    m_topHelpBtn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-    m_topHelpBtn->setIcon(IconFactory::icon(QStringLiteral("help"), theme.primary, theme.primary,
-                                            theme.disabledText, theme.accent));
-    m_topHelpBtn->setIconSize(QSize(18, 18));
-    m_topHelpBtn->setText(QStringLiteral("操作帮助"));
-    m_topHelpBtn->setFocusPolicy(Qt::NoFocus);
-    m_topHelpBtn->setToolTip(QStringLiteral("查看键盘快捷键与操作说明 (F1)"));
+    m_topLogBtn = makeRibbonAction(QStringLiteral("消息日志"), QStringLiteral("log"),
+                                   QStringLiteral("显示/隐藏底部消息日志 (Ctrl+L)"), true);
+    m_topHelpBtn = makeRibbonAction(QStringLiteral("操作帮助"), QStringLiteral("help"),
+                                    QStringLiteral("查看键盘快捷键与操作说明 (F1)"), false);
+    m_topExitBtn = makeRibbonAction(QStringLiteral("退出"), QStringLiteral("exit"),
+                                    QStringLiteral("安全退出程序"), false);
 
-    topLayout->addWidget(mark, 0, Qt::AlignVCenter);
-    topLayout->addWidget(name, 0, Qt::AlignVCenter);
-    topLayout->addWidget(sub, 0, Qt::AlignVCenter);
-    topLayout->addSpacing(6);
-    topLayout->addWidget(verticalSeparator(QStringLiteral("topSeparator"), 24));
-    topLayout->addSpacing(6);
-    topLayout->addWidget(m_crumbTool);
-    topLayout->addWidget(m_crumbSep);
-    topLayout->addWidget(m_crumbPage);
     topLayout->addStretch(1);
-    topLayout->addWidget(m_topLogBtn);
-    topLayout->addWidget(m_topHelpBtn);
+    topLayout->addWidget(m_topLogBtn, 0, Qt::AlignVCenter);
+    topLayout->addWidget(m_topHelpBtn, 0, Qt::AlignVCenter);
+    topLayout->addWidget(m_topExitBtn, 0, Qt::AlignVCenter);
     root->addWidget(top);
 
-    // ---- 主体：左侧框线模块列表 | (工作区 / 消息日志) ----
-    auto *body = new QWidget;
-    auto *bodyLayout = new QHBoxLayout(body);
-    bodyLayout->setContentsMargins(0, 0, 0, 0);
-    bodyLayout->setSpacing(0);
-
-    auto *railPanel = new QWidget;
-    railPanel->setObjectName(QStringLiteral("railPanel"));
-    railPanel->setAttribute(Qt::WA_StyledBackground, true);
-    railPanel->setFixedWidth(204);
-    auto *railLayout = new QVBoxLayout(railPanel);
-    railLayout->setContentsMargins(8, 2, 8, 8);
-    railLayout->setSpacing(4);
-    auto *railHeader = new QLabel(QStringLiteral("工具模块"));
-    railHeader->setObjectName(QStringLiteral("railHeader"));
-    m_rail = new ToolRail;
-    railLayout->addWidget(railHeader);
-    railLayout->addWidget(m_rail, 1);
-    bodyLayout->addWidget(railPanel);
-
+    // ---- 全宽主工作区 + 五圆点拖拽条 + 底部常驻白底消息日志框 ----
     m_stack = new QStackedWidget;
     m_stack->setObjectName(QStringLiteral("toolStack"));
     m_log = new LogPanel(m_platform->log());
     m_log->hide();
 
-    m_splitter = new DottedSplitter(Qt::Vertical);
-    m_splitter->setChildrenCollapsible(false);
-    m_splitter->setHandleWidth(7);
+    m_splitter = ui::makeSplitter(Qt::Vertical);
     m_splitter->addWidget(m_stack);
     m_splitter->addWidget(m_log);
     m_splitter->setStretchFactor(0, 1);
     m_splitter->setStretchFactor(1, 0);
-    bodyLayout->addWidget(m_splitter, 1);
-    root->addWidget(body, 1);
+    root->addWidget(m_splitter, 1);
 
     setCentralWidget(central);
 
-    // ---- 底部浅灰状态栏 ----
+    // ---- 26px 底部浅灰状态栏 ----
     m_status = new StatusStrip;
     statusBar()->setSizeGripEnabled(false);
-    statusBar()->setFixedHeight(28);
+    statusBar()->setFixedHeight(26);
     statusBar()->addWidget(m_status, 1);
 }
 
@@ -326,6 +251,7 @@ void MainWindow::connectServices()
     connect(m_topLogBtn, &QToolButton::toggled, this,
             [this](bool on) { setLogPanelVisible(on); });
     connect(m_topHelpBtn, &QToolButton::clicked, this, &MainWindow::showShortcutHelp);
+    connect(m_topExitBtn, &QToolButton::clicked, this, &QWidget::close);
     connect(m_log, &LogPanel::closeRequested, this, [this] {
         setLogPanelVisible(false);
         if (m_rail->isEnabled())
@@ -368,28 +294,25 @@ QString MainWindow::shortcutHelpText()
 {
     return QStringLiteral(
         "<table cellspacing='6' cellpadding='2'>"
-        "<tr><td><b>Ctrl+1 … Ctrl+9</b></td><td>切换到第 N 个工具</td></tr>"
-        "<tr><td><b>Alt+↑ / Alt+↓</b></td><td>上一个 / 下一个工具</td></tr>"
+        "<tr><td><b>Ctrl+1 … Ctrl+9</b></td><td>切换到第 N 个工具模块</td></tr>"
+        "<tr><td><b>Alt+↑ / Alt+↓</b></td><td>上一个 / 下一个工具模块</td></tr>"
         "<tr><td><b>Ctrl+PageUp / PageDown</b></td><td>当前工具的上一页 / 下一页</td></tr>"
-        "<tr><td><b>F6</b></td><td>在工具栏、页面条、页面、日志之间移动焦点</td></tr>"
-        "<tr><td><b>Ctrl+L</b></td><td>显示 / 隐藏消息日志面板</td></tr>"
-        "<tr><td><b>↑ ↓ / ← →</b></td><td>工具栏或页面条内逐项移动</td></tr>"
+        "<tr><td><b>F6</b></td><td>在顶部工具带、页面条、工作区、日志框之间移动焦点</td></tr>"
+        "<tr><td><b>Ctrl+L</b></td><td>显示 / 隐藏底部消息日志</td></tr>"
+        "<tr><td><b>← → / ↑ ↓</b></td><td>工具带或页面条内逐项移动</td></tr>"
+        "<tr><td><b>右键消息日志框</b></td><td>打开日志筛选栏、导出或清空日志</td></tr>"
         "<tr><td><b>F1</b></td><td>显示本帮助</td></tr>"
         "</table>"
-        "<p style='margin-top:8px;color:#5a6673;'>长时间任务进行期间导航被锁定，切换类快捷键暂时无效。</p>");
+        "<p style='margin-top:8px;color:#596370;'>长时间任务进行期间导航被锁定，切换类快捷键暂时无效。</p>");
 }
 
 void MainWindow::showShortcutHelp()
 {
-    QMessageBox box(QMessageBox::Information, QStringLiteral("键盘操作"),
+    QMessageBox box(QMessageBox::Information, QStringLiteral("操作帮助"),
                     shortcutHelpText(), QMessageBox::Ok, this);
     box.setTextFormat(Qt::RichText);
     box.exec();
 }
-
-// ---------------------------------------------------------------------------
-// 导航
-// ---------------------------------------------------------------------------
 
 int MainWindow::toolCount() const
 {
@@ -509,11 +432,13 @@ void MainWindow::onViewCreated(int index)
 void MainWindow::refreshChrome()
 {
     const int index = currentToolIndex();
+    const QString host = QSysInfo::machineHostName();
+    const QString hostSuffix = host.isEmpty() ? QString() : QStringLiteral("@%1").arg(host);
+
     if (index < 0) {
         m_crumbTool->setText(QStringLiteral("无工具"));
-        m_crumbSep->hide();
-        m_crumbPage->hide();
-        setWindowTitle(AppInfo::productName());
+        m_crumbPage->clear();
+        setWindowTitle(AppInfo::productName() + hostSuffix);
         refreshStatus();
         return;
     }
@@ -525,12 +450,12 @@ void MainWindow::refreshChrome()
 
     m_crumbTool->setText(info.title);
     m_crumbPage->setText(pageTitle);
-    m_crumbSep->setVisible(!pageTitle.isEmpty());
-    m_crumbPage->setVisible(!pageTitle.isEmpty());
 
-    setWindowTitle(pageTitle.isEmpty()
-                       ? QStringLiteral("%1 — %2").arg(AppInfo::productName(), info.title)
-                       : QStringLiteral("%1 — %2 · %3").arg(AppInfo::productName(), info.title, pageTitle));
+    // 标题栏贴合参考图风格：滕王阁@主机名 — 工具名 · 页面名
+    setWindowTitle((pageTitle.isEmpty() || pageTitle == info.title)
+                       ? QStringLiteral("%1%2 — %3").arg(AppInfo::productName(), hostSuffix, info.title)
+                       : QStringLiteral("%1%2 — %3 · %4")
+                             .arg(AppInfo::productName(), hostSuffix, info.title, pageTitle));
 
     m_log->setCurrentTool(info.id, info.title);
     refreshStatus();
@@ -575,10 +500,6 @@ void MainWindow::refreshNavigationLock()
         m_focusBeforeLock.clear();
     }
 }
-
-// ---------------------------------------------------------------------------
-// 焦点与日志面板
-// ---------------------------------------------------------------------------
 
 void MainWindow::cycleFocus()
 {
@@ -627,15 +548,15 @@ void MainWindow::setLogPanelVisible(bool visible)
             m_log->show();
             const int total = m_splitter->height();
             if (total > 0) {
-                const int fallback = qBound(130, total * 26 / 100, 195);
+                const int fallback = qBound(96, total * 18 / 100, 128);
                 const int logHeight = m_preferredLogHeight > 0
-                    ? qBound(100, m_preferredLogHeight, qMax(120, total - 160))
+                    ? qBound(80, m_preferredLogHeight, qMax(100, total - 200))
                     : fallback;
-                m_splitter->setSizes({qMax(160, total - logHeight), logHeight});
+                m_splitter->setSizes({qMax(200, total - logHeight), logHeight});
             }
         } else {
             const QList<int> sizes = m_splitter->sizes();
-            if (sizes.size() >= 2 && sizes.at(1) >= 80)
+            if (sizes.size() >= 2 && sizes.at(1) >= 70)
                 m_preferredLogHeight = sizes.at(1);
             m_log->hide();
         }

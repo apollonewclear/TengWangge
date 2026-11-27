@@ -1,12 +1,11 @@
 #include "shell/status_strip.h"
 
-#include "core/app_info.h"
 #include "shell/elided_label.h"
 
-#include <QDateTime>
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QStyle>
+#include <QTimer>
 #include <QVariant>
 
 namespace tw {
@@ -27,10 +26,24 @@ QString currentUserName()
     return user.isEmpty() ? QStringLiteral("local") : user;
 }
 
+QString formatDuration(qint64 totalSeconds)
+{
+    const qint64 secs = qMax<qint64>(0, totalSeconds);
+    const qint64 hours = secs / 3600;
+    const qint64 minutes = (secs % 3600) / 60;
+    const qint64 rem = secs % 60;
+    return QStringLiteral("%1:%2:%3")
+        .arg(hours, 2, 10, QLatin1Char('0'))
+        .arg(minutes, 2, 10, QLatin1Char('0'))
+        .arg(rem, 2, 10, QLatin1Char('0'));
+}
+
 } // namespace
 
 StatusStrip::StatusStrip(QWidget *parent)
     : QFrame(parent)
+    , m_startTime(QDateTime::currentDateTime())
+    , m_userName(currentUserName())
 {
     setObjectName(QStringLiteral("statusStrip"));
     setAccessibleName(QStringLiteral("状态栏"));
@@ -41,7 +54,7 @@ StatusStrip::StatusStrip(QWidget *parent)
 
     m_dot = new QLabel;
     m_dot->setObjectName(QStringLiteral("statusDot"));
-    m_dot->setFixedSize(8, 8);
+    m_dot->setFixedSize(7, 7);
 
     m_text = new ElidedLabel;
     m_text->setObjectName(QStringLiteral("statusText"));
@@ -52,11 +65,7 @@ StatusStrip::StatusStrip(QWidget *parent)
     m_lock->setAccessibleName(QStringLiteral("导航锁定"));
     m_lock->hide();
 
-    m_meta = new QLabel(
-        QStringLiteral("用户:%1   启动时间:%2   版本:v%3")
-            .arg(currentUserName(),
-                 QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")),
-                 AppInfo::version()));
+    m_meta = new QLabel;
     m_meta->setObjectName(QStringLiteral("statusMeta"));
     m_meta->setFocusPolicy(Qt::NoFocus);
 
@@ -73,7 +82,23 @@ StatusStrip::StatusStrip(QWidget *parent)
     layout->addWidget(m_meta, 0, Qt::AlignVCenter);
     layout->addWidget(m_logToggle, 0, Qt::AlignVCenter);
 
+    m_uptimeTimer = new QTimer(this);
+    m_uptimeTimer->setInterval(1000);
+    connect(m_uptimeTimer, &QTimer::timeout, this, &StatusStrip::updateUptime);
+    m_uptimeTimer->start();
+    updateUptime();
+
     setStatus(StatusMessage{StatusState::Idle, StatusBoard::idleText()});
+}
+
+void StatusStrip::updateUptime()
+{
+    const qint64 elapsed = m_startTime.secsTo(QDateTime::currentDateTime());
+    m_meta->setText(
+        QStringLiteral("用户:%1  启动时间:%2  有效时长:%3")
+            .arg(m_userName,
+                 m_startTime.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")),
+                 formatDuration(elapsed)));
 }
 
 void StatusStrip::setStatus(const StatusMessage &message)

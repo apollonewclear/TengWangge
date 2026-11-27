@@ -11,11 +11,13 @@ class QCheckBox;
 class QLabel;
 class QProgressBar;
 class QPushButton;
+class QTableWidget;
+class QTreeWidget;
 
 namespace tw {
 
 // “任务执行”页：基于平台标准后台运行器 TaskRunner 演示真实工作线程执行、
-// 可中断休眠、进度回传、RAII 导航锁定以及错误/取消收敛。
+// 可中断休眠、步骤级表格状态刷新、RAII 导航锁定以及错误/取消收敛。
 class TaskDemoPage : public QWidget
 {
     Q_OBJECT
@@ -36,13 +38,27 @@ signals:
     void finished(bool success);
 
 private:
+    enum class RunOutcome
+    {
+        Idle,
+        Running,
+        Succeeded,
+        Failed,
+        Canceled
+    };
+
     void start();
     void cancel();
     void updateUi();
+    void refreshStepTable();
 
     ToolServices m_services;
     TaskRunner *m_runner = nullptr;
     int m_stepIntervalMs = 400;
+    RunOutcome m_outcome = RunOutcome::Idle;
+    int m_lastPct = 0;
+    QTreeWidget *m_planTree = nullptr;
+    QTableWidget *m_stepTable = nullptr;
     QLabel *m_state = nullptr;
     QLabel *m_percent = nullptr;
     QProgressBar *m_bar = nullptr;

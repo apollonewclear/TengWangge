@@ -7,13 +7,8 @@
 
 namespace tw {
 
-// 左侧工具栏：每个工具一行（图标 + 名称 + Ctrl+N 提示）。
-//
-// - 当前工具：左侧琥珀色竖条 + 加亮底色，不依赖颜色以外的唯一线索（字重也变粗）。
-// - 键盘焦点：整行描边，和选中态可同时出现。
-// - 不可用工具：整行变灰并带“不可用”标签，仍可选中以查看原因。
-// - 导航被锁定（setEnabled(false)）：整行变灰，当前位置仍可辨认。
-// 行由 ToolRailDelegate 绘制，颜色取自 Theme，不依赖 QSS 选择器。
+// 顶部水平大图标工具带（Ribbon）：每个工具一个“上图（30x30 双色矢量）+ 下文”按钮，
+// 1:1 对齐工业软件顶部模块切换条，释放左侧全部空间给业务工作区。
 class ToolRail : public QListWidget
 {
     Q_OBJECT
@@ -33,6 +28,9 @@ public:
     bool isAvailable(int index) const;
 
     QSize sizeHint() const override;
+
+protected:
+    void keyPressEvent(QKeyEvent *event) override;
 };
 
 } // namespace tw
