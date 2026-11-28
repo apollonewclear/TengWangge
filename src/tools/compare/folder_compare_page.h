@@ -38,6 +38,7 @@ public:
     void setIgnorePatternsText(const QString &patterns);
     void setTreeViewMode(bool treeMode);
     bool isTreeViewMode() const { return m_treeMode; }
+    void loadSample();
 
     void startCompare();
     void compareSyncForTest();
@@ -107,6 +108,8 @@ private:
     QLabel *m_statDiff = nullptr;
     QLabel *m_statLeft = nullptr;
     QLabel *m_statRight = nullptr;
+    QLabel *m_statMd5Same = nullptr;
+    QLabel *m_statMd5Diff = nullptr;
     QLabel *m_statElapsed = nullptr;
     QProgressBar *m_progressBar = nullptr;
 

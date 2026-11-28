@@ -283,7 +283,8 @@ struct FolderEntry
 
 struct FolderCompareOptions
 {
-    FolderCompareMode mode = FolderCompareMode::SizeAndTime;
+    FolderCompareMode mode = FolderCompareMode::ContentMd5;
+    bool computeMd5 = true;
     QStringList ignorePatterns = {QStringLiteral(".git"), QStringLiteral("*.bak")};
     int timeToleranceSecs = 2;
 };
@@ -295,8 +296,10 @@ struct FolderCompareResult
     int diffCount = 0;
     int leftOnlyCount = 0;
     int rightOnlyCount = 0;
+    int md5SameCount = 0;
+    int md5DiffCount = 0;
     qint64 elapsedMs = 0;
-    FolderCompareMode mode = FolderCompareMode::SizeAndTime;
+    FolderCompareMode mode = FolderCompareMode::ContentMd5;
     bool canceled = false;
 };
 

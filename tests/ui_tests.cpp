@@ -1376,16 +1376,19 @@ void UiTests::compare_folderDiffAndUiWorkflow()
     QVERIFY(cmpTool->folderPage() && cmpTool->textPage() && cmpTool->iniPage() && cmpTool->mergePage());
     cmpTool->folderPage()->setDirectories(leftDir, rightDir);
     cmpTool->folderPage()->setIgnorePatternsText(QStringLiteral(".git;*.bak;*.tmp"));
-    cmpTool->folderPage()->setCompareMode(cmp::FolderCompareMode::ContentMd5);
+    QCOMPARE(cmpTool->folderPage()->compareMode(), cmp::FolderCompareMode::ContentMd5);
     cmpTool->folderPage()->compareSyncForTest();
     QCOMPARE(cmpTool->folderPage()->result().entries.size(), 4);
+    QCOMPARE(cmpTool->folderPage()->result().md5SameCount, 1);
+    QCOMPARE(cmpTool->folderPage()->result().md5DiffCount, 1);
     QVERIFY(!cmpTool->folderPage()->tableWidget()->isColumnHidden(4));
     QVERIFY(!cmpTool->folderPage()->tableWidget()->isColumnHidden(8));
     shot(&window, QStringLiteral("compare-folder-md5"));
 
     cmpTool->folderPage()->setCompareMode(cmp::FolderCompareMode::SizeAndTime);
     cmpTool->folderPage()->compareSyncForTest();
-    QVERIFY(cmpTool->folderPage()->tableWidget()->isColumnHidden(4));
+    QVERIFY(!cmpTool->folderPage()->tableWidget()->isColumnHidden(4));
+    QVERIFY(!cmpTool->folderPage()->tableWidget()->isColumnHidden(8));
     shot(&window, QStringLiteral("compare-folder"));
 
     // 切换树形视图并验证目录节点构建
@@ -1449,6 +1452,8 @@ void UiTests::compare_md5AndSummaryStats()
     QCOMPARE(fres.mode, cmp::FolderCompareMode::ContentMd5);
     QCOMPARE(fres.sameCount, 1);
     QCOMPARE(fres.diffCount, 1);
+    QCOMPARE(fres.md5SameCount, 1);
+    QCOMPARE(fres.md5DiffCount, 1);
     QVERIFY(fres.elapsedMs >= 0);
 
     bool checkedSame = false;
@@ -1471,6 +1476,7 @@ void UiTests::compare_md5AndSummaryStats()
     const QString report = cmp::formatFolderDiffReport(leftDir, rightDir, fres);
     QVERIFY(report.contains(expectedHelloMd5));
     QVERIFY(report.contains(QStringLiteral("50.0%")));
+    QVERIFY(report.contains(QStringLiteral("MD5 汇总")));
 
     // 3. 文本对比页与 INI 对比页实时 MD5 一致/不同校验
     ToolRegistry registry;
@@ -1492,6 +1498,12 @@ void UiTests::compare_md5AndSummaryStats()
     QCOMPARE(cmpTool->iniPage()->leftMd5(), cmpTool->iniPage()->rightMd5());
     cmpTool->iniPage()->setContents(QStringLiteral("[G]\nk = 1\n"), QStringLiteral("[G]\nk = 2\n"));
     QVERIFY(cmpTool->iniPage()->leftMd5() != cmpTool->iniPage()->rightMd5());
+
+    // 4. 文件夹对比示例按钮一键加载与 MD5 统计验证
+    cmpTool->folderPage()->loadSample();
+    QCOMPARE(cmpTool->folderPage()->result().entries.size(), 5);
+    QCOMPARE(cmpTool->folderPage()->result().md5SameCount, 1);
+    QCOMPARE(cmpTool->folderPage()->result().md5DiffCount, 2);
 }
 
 QTEST_MAIN(UiTests)

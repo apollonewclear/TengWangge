@@ -104,8 +104,8 @@ FolderComparePage::FolderComparePage(const ToolServices &services, QWidget *pare
     QPushButton *browseR = ui::makeActionButton(QStringLiteral("浏览"), QStringLiteral("folder"));
 
     m_modeCombo = new QComboBox;
-    m_modeCombo->addItem(QStringLiteral("大小与时间"), static_cast<int>(cmp::FolderCompareMode::SizeAndTime));
     m_modeCombo->addItem(QStringLiteral("内容 MD5"), static_cast<int>(cmp::FolderCompareMode::ContentMd5));
+    m_modeCombo->addItem(QStringLiteral("大小与时间"), static_cast<int>(cmp::FolderCompareMode::SizeAndTime));
     m_modeCombo->addItem(QStringLiteral("内容 SHA-256"), static_cast<int>(cmp::FolderCompareMode::ContentSha256));
 
     m_compareBtn = ui::makeActionButton(QStringLiteral("开始比较"), QStringLiteral("refresh"));
@@ -149,6 +149,7 @@ FolderComparePage::FolderComparePage(const ToolServices &services, QWidget *pare
     QPushButton *copyLBtn = ui::makeActionButton(QStringLiteral("复制到左 ←"), QStringLiteral("copy_left"));
     QPushButton *openTextBtn = ui::makeActionButton(QStringLiteral("文本对比"), QStringLiteral("compare"));
     QPushButton *openIniBtn = ui::makeActionButton(QStringLiteral("INI 对比"), QStringLiteral("info"));
+    QPushButton *sampleBtn = ui::makeActionButton(QStringLiteral("示例"), QStringLiteral("add"));
     QPushButton *exportBtn = ui::makeActionButton(QStringLiteral("导出"), QStringLiteral("export"));
 
     m_autoBackup = new QCheckBox(QStringLiteral(".bak"));
@@ -158,13 +159,13 @@ FolderComparePage::FolderComparePage(const ToolServices &services, QWidget *pare
     m_ignoreEdit = new QLineEdit(QStringLiteral(".git;*.bak;*.o;build"));
     m_ignoreEdit->setPlaceholderText(QStringLiteral("忽略规则(分号分隔)"));
     m_ignoreEdit->setToolTip(QStringLiteral("忽略文件/目录通配符，分号或逗号分隔，如 .git;*.bak;build"));
-    m_ignoreEdit->setFixedWidth(135);
+    m_ignoreEdit->setFixedWidth(115);
     m_ignoreEdit->setAccessibleName(QStringLiteral("忽略规则"));
 
     m_searchEdit = new QLineEdit;
     m_searchEdit->setPlaceholderText(QStringLiteral("过滤相对路径..."));
     m_searchEdit->setClearButtonEnabled(true);
-    m_searchEdit->setFixedWidth(145);
+    m_searchEdit->setFixedWidth(125);
     m_searchEdit->setAccessibleName(QStringLiteral("过滤文件夹对比结果"));
 
     actionRow->addWidget(m_filterAllBtn);
@@ -181,15 +182,16 @@ FolderComparePage::FolderComparePage(const ToolServices &services, QWidget *pare
     actionRow->addWidget(openIniBtn);
     actionRow->addWidget(m_autoBackup);
     actionRow->addStretch(1);
+    actionRow->addWidget(sampleBtn);
     actionRow->addWidget(exportBtn);
     root->addLayout(actionRow);
 
-    // ---- 汇总统计条（KPI 徽章 + 耗时 + 忽略规则 + 路径过滤）----
+    // ---- 汇总统计条（KPI 徽章 + MD5 汇总 + 耗时 + 忽略规则 + 路径过滤）----
     auto *summaryBar = new QFrame;
     summaryBar->setObjectName(QStringLiteral("summaryBar"));
     auto *infoRow = new QHBoxLayout(summaryBar);
     infoRow->setContentsMargins(8, 4, 8, 4);
-    infoRow->setSpacing(6);
+    infoRow->setSpacing(5);
 
     auto makeBadge = [](const QString &text, const char *role) {
         QLabel *lbl = ui::makeLabel(text, role);
@@ -201,11 +203,13 @@ FolderComparePage::FolderComparePage(const ToolServices &services, QWidget *pare
     m_statDiff = makeBadge(QStringLiteral("不同: 0"), "statDiff");
     m_statLeft = makeBadge(QStringLiteral("仅左: 0"), "statLeft");
     m_statRight = makeBadge(QStringLiteral("仅右: 0"), "statRight");
+    m_statMd5Same = makeBadge(QStringLiteral("MD5一致: 0"), "statMd5Ok");
+    m_statMd5Diff = makeBadge(QStringLiteral("MD5不同: 0"), "statMd5Ok");
     m_statElapsed = makeBadge(QStringLiteral("耗时: —"), "hint");
 
     m_progressBar = new QProgressBar;
     m_progressBar->setRange(0, 100);
-    m_progressBar->setFixedWidth(96);
+    m_progressBar->setFixedWidth(72);
     m_progressBar->setFixedHeight(8);
     m_progressBar->setTextVisible(false);
     m_progressBar->hide();
@@ -217,6 +221,8 @@ FolderComparePage::FolderComparePage(const ToolServices &services, QWidget *pare
     infoRow->addWidget(m_statDiff);
     infoRow->addWidget(m_statLeft);
     infoRow->addWidget(m_statRight);
+    infoRow->addWidget(m_statMd5Same);
+    infoRow->addWidget(m_statMd5Diff);
     infoRow->addWidget(m_statElapsed);
     infoRow->addWidget(m_progressBar);
     infoRow->addStretch(1);
@@ -258,8 +264,6 @@ FolderComparePage::FolderComparePage(const ToolServices &services, QWidget *pare
     m_table->setColumnWidth(7, 132);
     m_table->horizontalHeader()->setSectionResizeMode(8, QHeaderView::Fixed);
     m_table->setColumnWidth(8, 102);
-    m_table->setColumnHidden(4, true);
-    m_table->setColumnHidden(8, true);
 
     m_tree = new QTreeWidget;
     m_tree->setAccessibleName(QStringLiteral("文件夹比较树形视图"));
@@ -308,6 +312,7 @@ FolderComparePage::FolderComparePage(const ToolServices &services, QWidget *pare
     connect(copyLBtn, &QPushButton::clicked, this, [this]() { copySelectedToLeft(); });
     connect(openTextBtn, &QPushButton::clicked, this, [this]() { openSelectedInCompare(false); });
     connect(openIniBtn, &QPushButton::clicked, this, [this]() { openSelectedInCompare(true); });
+    connect(sampleBtn, &QPushButton::clicked, this, &FolderComparePage::loadSample);
     connect(exportBtn, &QPushButton::clicked, this, &FolderComparePage::exportReport);
     connect(m_searchEdit, &QLineEdit::textChanged, this, [this](const QString &) { rebuildViews(); });
 
@@ -373,6 +378,49 @@ void FolderComparePage::setTreeViewMode(bool treeMode)
     m_viewTreeBtn->setChecked(treeMode);
     m_viewStack->setCurrentIndex(treeMode ? 1 : 0);
     rebuildViews();
+}
+
+void FolderComparePage::loadSample()
+{
+    const QString base = m_services.dataDir().isEmpty()
+        ? QDir::temp().filePath(QStringLiteral("tengwangge_sample_folder"))
+        : QDir(m_services.dataDir()).filePath(QStringLiteral("sample_folder_compare"));
+    const QString leftDir = QDir(base).filePath(QStringLiteral("left"));
+    const QString rightDir = QDir(base).filePath(QStringLiteral("right"));
+
+    QDir(base).removeRecursively();
+    QDir().mkpath(leftDir + QStringLiteral("/conf"));
+    QDir().mkpath(rightDir + QStringLiteral("/conf"));
+    QDir().mkpath(leftDir + QStringLiteral("/scripts"));
+    QDir().mkpath(rightDir + QStringLiteral("/scripts"));
+
+    cmp::saveTextFileWithBackup(leftDir + QStringLiteral("/same_config.txt"),
+                                QStringLiteral("node_group = scada_core\nheartbeat_ms = 1000\n"), false);
+    cmp::saveTextFileWithBackup(rightDir + QStringLiteral("/same_config.txt"),
+                                QStringLiteral("node_group = scada_core\nheartbeat_ms = 1000\n"), false);
+
+    cmp::saveTextFileWithBackup(leftDir + QStringLiteral("/conf/sca_model_conf.ini"),
+                                QStringLiteral("[Global]\nsync_interval = 5\nstrict_mode = 0\n"), false);
+    cmp::saveTextFileWithBackup(rightDir + QStringLiteral("/conf/sca_model_conf.ini"),
+                                QStringLiteral("[Global]\nsync_interval = 10\nstrict_mode = 1\n"), false);
+
+    cmp::saveTextFileWithBackup(leftDir + QStringLiteral("/scripts/deploy.sh"),
+                                QStringLiteral("#!/bin/bash\necho 'deploy v1.0'\n"), false);
+    cmp::saveTextFileWithBackup(rightDir + QStringLiteral("/scripts/deploy.sh"),
+                                QStringLiteral("#!/bin/bash\necho 'deploy v1.2'\n"), false);
+
+    cmp::saveTextFileWithBackup(leftDir + QStringLiteral("/only_left.log"),
+                                QStringLiteral("left host diagnostic log\n"), false);
+    cmp::saveTextFileWithBackup(rightDir + QStringLiteral("/only_right.log"),
+                                QStringLiteral("right host diagnostic log\n"), false);
+
+    setDirectories(leftDir, rightDir);
+    compareSyncForTest();
+    m_services.showStatus(StatusState::Info,
+                          QStringLiteral("已载入文件夹比较示例（共 %1 项，MD5 一致 %2，MD5 不同 %3）")
+                              .arg(m_result.entries.size())
+                              .arg(m_result.md5SameCount)
+                              .arg(m_result.md5DiffCount));
 }
 
 bool FolderComparePage::isRunning() const
@@ -465,6 +513,9 @@ void FolderComparePage::updateSummaryBar()
     m_statDiff->setText(QStringLiteral("不同: %1").arg(m_result.diffCount));
     m_statLeft->setText(QStringLiteral("仅左: %1").arg(m_result.leftOnlyCount));
     m_statRight->setText(QStringLiteral("仅右: %1").arg(m_result.rightOnlyCount));
+    m_statMd5Same->setText(QStringLiteral("MD5一致: %1").arg(m_result.md5SameCount));
+    m_statMd5Diff->setText(QStringLiteral("MD5不同: %1").arg(m_result.md5DiffCount));
+    ui::setRole(m_statMd5Diff, m_result.md5DiffCount > 0 ? "statMd5Diff" : "statMd5Ok");
     if (total > 0 || m_result.elapsedMs > 0)
         m_statElapsed->setText(QStringLiteral("耗时: %1 ms").arg(m_result.elapsedMs));
     else
@@ -475,9 +526,6 @@ void FolderComparePage::rebuildTable()
 {
     const Theme &theme = Theme::workbench();
     const QString kw = m_searchEdit->text().trimmed();
-    const bool showMd5 = (m_result.mode == cmp::FolderCompareMode::ContentMd5);
-    m_table->setColumnHidden(4, !showMd5);
-    m_table->setColumnHidden(8, !showMd5);
 
     QFont monoFont = m_table->font();
     monoFont.setFamily(QStringLiteral("DejaVu Sans Mono"));
@@ -508,10 +556,15 @@ void FolderComparePage::rebuildTable()
         m_table->setItem(row, 2, makeCell(e.leftExists ? formatSize(e.leftSize) : QStringLiteral("—"), Qt::AlignRight | Qt::AlignVCenter));
         m_table->setItem(row, 3, makeCell(e.leftExists ? e.leftMtime.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")) : QStringLiteral("—"), Qt::AlignCenter));
 
+        const bool bothHaveMd5 = !e.leftMd5.isEmpty() && !e.rightMd5.isEmpty();
+        const bool md5Matched = bothHaveMd5 && (e.leftMd5 == e.rightMd5);
+
         QTableWidgetItem *lMd5Item = makeCell(e.leftMd5.isEmpty() ? QStringLiteral("—") : e.leftMd5.left(12), Qt::AlignCenter);
         lMd5Item->setFont(monoFont);
         if (!e.leftMd5.isEmpty())
             lMd5Item->setToolTip(QStringLiteral("左侧 MD5: %1").arg(e.leftMd5));
+        if (bothHaveMd5)
+            lMd5Item->setForeground(QBrush(md5Matched ? theme.statusSuccess : theme.danger));
         m_table->setItem(row, 4, lMd5Item);
 
         const auto st = statusAppearance(e.status, theme);
@@ -526,6 +579,8 @@ void FolderComparePage::rebuildTable()
         rMd5Item->setFont(monoFont);
         if (!e.rightMd5.isEmpty())
             rMd5Item->setToolTip(QStringLiteral("右侧 MD5: %1").arg(e.rightMd5));
+        if (bothHaveMd5)
+            rMd5Item->setForeground(QBrush(md5Matched ? theme.statusSuccess : theme.danger));
         m_table->setItem(row, 8, rMd5Item);
     }
     if (m_table->rowCount() > 0)
