@@ -13,6 +13,7 @@
 
 class QFrame;
 class QLabel;
+class QPushButton;
 class QSplitter;
 class QStackedWidget;
 class QToolButton;
@@ -22,6 +23,7 @@ namespace tw {
 class LogPanel;
 class StatusStrip;
 class ToolHost;
+class ToolHubView;
 class ToolRail;
 class ToolView;
 
@@ -60,6 +62,12 @@ public:
     void setLogPanelVisible(bool visible);
     bool isLogPanelVisible() const;
 
+    // 面向 20+ 工具模块的「工具中心」与 Ctrl+K 快速切换。
+    void showToolHub(bool visible);
+    bool isToolHubVisible() const;
+    void openQuickLauncher();
+    ToolHubView *toolHub() const { return m_hubView; }
+
     // 会话状态持久化（窗口尺寸、日志展开状态/高度、上次选中工具与各工具页面）。
     SessionState captureSessionState() const;
     void applySessionState(const SessionState &state, bool restoreGeometry = true,
@@ -95,6 +103,7 @@ private:
     void refreshNavigationLock();
     void syncRailSelection();
     void showShortcutHelp();
+    void showMoreToolsMenu();
 
     // 声明顺序即销毁顺序的反序：平台最后销毁。
     std::unique_ptr<PlatformServices> m_platform;
@@ -102,6 +111,8 @@ private:
 
     ToolHost *m_host = nullptr;
     ToolRail *m_rail = nullptr;
+    QStackedWidget *m_bodyStack = nullptr;
+    ToolHubView *m_hubView = nullptr;
     QStackedWidget *m_stack = nullptr;
     QSplitter *m_splitter = nullptr;
     LogPanel *m_log = nullptr;
@@ -109,6 +120,9 @@ private:
     QLabel *m_crumbTool = nullptr;
     QLabel *m_crumbSep = nullptr;
     QLabel *m_crumbPage = nullptr;
+    QToolButton *m_hubBtn = nullptr;
+    QToolButton *m_moreToolsBtn = nullptr;
+    QPushButton *m_quickSearchBtn = nullptr;
     QToolButton *m_topLogBtn = nullptr;
     QToolButton *m_topHelpBtn = nullptr;
     QToolButton *m_topExitBtn = nullptr;

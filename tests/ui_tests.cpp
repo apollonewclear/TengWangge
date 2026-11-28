@@ -9,9 +9,11 @@
 #include "shell/icon_factory.h"
 #include "shell/log_panel.h"
 #include "shell/main_window.h"
+#include "shell/quick_launcher.h"
 #include "shell/status_strip.h"
 #include "shell/theme.h"
 #include "shell/tool_host.h"
+#include "shell/tool_hub_view.h"
 #include "shell/tool_rail.h"
 #include "shell/tool_registry.h"
 #include "shell/tool_view.h"
@@ -63,6 +65,8 @@ public:
         QString title;
         int order = 100;
         int pageCount = 2;
+        QString category;
+        QString iconKey = QStringLiteral("info");
         bool failInit = false;
         bool throwInit = false;
         QString pageProblem; // "empty" "dup" "null" "throw" "badid"
@@ -79,7 +83,8 @@ public:
         i.id = spec.id;
         i.title = spec.title;
         i.summary = spec.title + QStringLiteral("摘要");
-        i.iconKey = QStringLiteral("info");
+        i.iconKey = spec.iconKey;
+        i.category = spec.category;
         i.order = spec.order;
         return i;
     }
@@ -231,6 +236,7 @@ private slots:
     void window_breadcrumbAndTitleFollowSelection();
     void window_unavailableToolShowsReasonAndIsSelectable();
     void window_emptyRegistryDoesNotCrash();
+    void window_toolHubAndQuickLauncherScaleTo20Tools();
 
     // ---- 导航锁 ----
     void lock_blocksToolAndPageNavigation();
@@ -623,6 +629,73 @@ void UiTests::window_emptyRegistryDoesNotCrash()
     QVERIFY(!window.stepPage(1));
     window.cycleFocus();
     shot(&window, QStringLiteral("ui-empty"));
+}
+
+void UiTests::window_toolHubAndQuickLauncherScaleTo20Tools()
+{
+    const QStringList cats = {QStringLiteral("文件与对比"), QStringLiteral("配置核对"),
+                              QStringLiteral("日志分析"), QStringLiteral("运维诊断"),
+                              QStringLiteral("系统环境")};
+    const QStringList icons = {QStringLiteral("compare"), QStringLiteral("info"),
+                               QStringLiteral("log"), QStringLiteral("scan"),
+                               QStringLiteral("environment")};
+
+    QVector<FakeTool::Spec> specs;
+    QVector<ToolInfo> infos;
+    QVector<bool> avail;
+    for (int i = 0; i < 20; ++i) {
+        FakeTool::Spec s(QStringLiteral("tool-%1").arg(i + 1, 2, 10, QLatin1Char('0')),
+                         QStringLiteral("业务工具%1").arg(i + 1),
+                         10 + i, 1);
+        s.category = cats.at(i % cats.size());
+        s.iconKey = icons.at(i % icons.size());
+        specs.append(s);
+
+        ToolInfo ti;
+        ti.id = s.id;
+        ti.title = s.title;
+        ti.summary = s.title + QStringLiteral("摘要");
+        ti.iconKey = s.iconKey;
+        ti.category = s.category;
+        ti.order = s.order;
+        infos.append(ti);
+        avail.append(true);
+    }
+
+    Fixture f(specs);
+    f.window->resize(1180, 740);
+    f.show();
+
+    // 20 个工具注册后窗口最小宽度仍受控，不撑爆顶栏
+    QVERIFY(f.window->minimumSizeHint().width() <= 900);
+    QCOMPARE(f.window->toolCount(), 20);
+    QVERIFY(!f.window->isToolHubVisible());
+
+    // 打开「工具中心」：验证 5 大分类、20 张卡片、按分类与关键字筛选
+    f.window->showToolHub(true);
+    QVERIFY(f.window->isToolHubVisible());
+    QCOMPARE(f.window->toolHub()->categoryCount(), 5);
+    QCOMPARE(f.window->toolHub()->visibleCardCount(), 20);
+    shot(f.window.get(), QStringLiteral("ui-hub-20tools"));
+
+    f.window->toolHub()->selectCategory(QStringLiteral("运维诊断"));
+    QCOMPARE(f.window->toolHub()->visibleCardCount(), 4);
+    f.window->toolHub()->setSearchText(QStringLiteral("tool-19"));
+    QCOMPARE(f.window->toolHub()->visibleCardCount(), 1);
+
+    // 验证 Ctrl+K 快速搜索弹窗过滤
+    QuickLauncherDialog dlg(f.window.get());
+    dlg.setTools(infos, avail);
+    QCOMPARE(dlg.matchedCount(), 20);
+    dlg.setQuery(QStringLiteral("配置核对"));
+    QCOMPARE(dlg.matchedCount(), 4);
+    dlg.setQuery(QStringLiteral("tool-17"));
+    QCOMPARE(dlg.matchedCount(), 1);
+
+    // 选择第 17 个工具后自动退出工具中心并切换过去
+    QVERIFY(f.window->selectTool(16));
+    QVERIFY(!f.window->isToolHubVisible());
+    QCOMPARE(f.window->currentToolId(), QStringLiteral("tool-17"));
 }
 
 // ---------------------------------------------------------------------------

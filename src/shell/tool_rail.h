@@ -28,9 +28,11 @@ public:
     bool isAvailable(int index) const;
 
     QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
 
 protected:
     void keyPressEvent(QKeyEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
 };
 
 } // namespace tw

@@ -4,9 +4,11 @@
 #include "shell/icon_factory.h"
 #include "shell/log_panel.h"
 #include "shell/page_chrome.h"
+#include "shell/quick_launcher.h"
 #include "shell/status_strip.h"
 #include "shell/theme.h"
 #include "shell/tool_host.h"
+#include "shell/tool_hub_view.h"
 #include "shell/tool_rail.h"
 #include "shell/tool_view.h"
 
@@ -15,6 +17,8 @@
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMap>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -78,9 +82,13 @@ MainWindow::MainWindow(std::unique_ptr<PlatformServices> platform, ToolRegistry 
     for (int i = 0; i < m_host->count(); ++i)
         infos.append(m_host->info(i));
     m_rail->setTools(infos);
+    m_hubView->setTools(infos);
+    m_moreToolsBtn->setVisible(infos.size() > 6);
     for (int i = 0; i < m_host->count(); ++i) {
-        if (m_host->state(i) == ToolHost::State::Failed)
+        if (m_host->state(i) == ToolHost::State::Failed) {
             m_rail->setAvailable(i, false, m_host->error(i));
+            m_hubView->setAvailable(i, false, m_host->error(i));
+        }
     }
     self.logInfo(QStringLiteral("加载全部工具模块完成（共 %1 项）").arg(infos.size()));
 
@@ -143,18 +151,47 @@ void MainWindow::buildUi()
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // ---- 68px 顶部合一 Ribbon 大图标工具带（左：模块图标切换；右：日志/帮助/退出）----
+    // ---- 68px 顶部合一 Ribbon 大图标工具带（左：工具中心 + 可滚模块带 + 溢出菜单；右：Ctrl+K 速搜 + 日志/帮助/退出）----
     auto *top = new QFrame;
     top->setObjectName(QStringLiteral("topBar"));
     top->setFixedHeight(68);
     auto *topLayout = new QHBoxLayout(top);
-    topLayout->setContentsMargins(10, 4, 14, 4);
+    topLayout->setContentsMargins(10, 4, 12, 4);
     topLayout->setSpacing(6);
 
-    m_rail = new ToolRail;
-    topLayout->addWidget(m_rail, 0, Qt::AlignVCenter);
+    auto makeRibbonAction = [&](const QString &text, const QString &iconKey,
+                                const QString &tip, bool checkable) {
+        auto *btn = new QToolButton;
+        btn->setObjectName(QStringLiteral("topActionBtn"));
+        btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+        btn->setIcon(IconFactory::icon(iconKey, theme.primary, theme.primary,
+                                       theme.disabledText, theme.accent));
+        btn->setIconSize(QSize(28, 28));
+        btn->setFixedSize(74, 58);
+        btn->setText(text);
+        btn->setCheckable(checkable);
+        btn->setFocusPolicy(Qt::NoFocus);
+        btn->setToolTip(tip);
+        return btn;
+    };
 
-    // 保留无障碍/状态元数据标签（隐藏显示，避免干扰极简大图标工具带，同时兼容路径查询）
+    m_hubBtn = makeRibbonAction(QStringLiteral("工具中心"), QStringLiteral("hub"),
+                                QStringLiteral("按分类浏览与搜索全部工具模块 (Ctrl+0)"), true);
+    auto *divider = new QFrame;
+    divider->setObjectName(QStringLiteral("topDivider"));
+    divider->setFixedHeight(40);
+
+    m_rail = new ToolRail;
+
+    m_moreToolsBtn = new QToolButton;
+    m_moreToolsBtn->setObjectName(QStringLiteral("moreToolsBtn"));
+    m_moreToolsBtn->setText(QStringLiteral("»"));
+    m_moreToolsBtn->setToolTip(QStringLiteral("按业务分类查看全部工具模块"));
+    m_moreToolsBtn->setFixedSize(26, 44);
+    m_moreToolsBtn->setFocusPolicy(Qt::NoFocus);
+    m_moreToolsBtn->hide();
+
+    // 保留无障碍/状态元数据标签（隐藏显示，兼容路径查询）
     m_crumbTool = new QLabel(top);
     m_crumbTool->setObjectName(QStringLiteral("breadcrumbTool"));
     m_crumbTool->hide();
@@ -165,21 +202,14 @@ void MainWindow::buildUi()
     m_crumbPage->setObjectName(QStringLiteral("breadcrumbPage"));
     m_crumbPage->hide();
 
-    auto makeRibbonAction = [&](const QString &text, const QString &iconKey,
-                                const QString &tip, bool checkable) {
-        auto *btn = new QToolButton;
-        btn->setObjectName(QStringLiteral("topActionBtn"));
-        btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
-        btn->setIcon(IconFactory::icon(iconKey, theme.primary, theme.primary,
-                                       theme.disabledText, theme.accent));
-        btn->setIconSize(QSize(28, 28));
-        btn->setFixedSize(76, 58);
-        btn->setText(text);
-        btn->setCheckable(checkable);
-        btn->setFocusPolicy(Qt::NoFocus);
-        btn->setToolTip(tip);
-        return btn;
-    };
+    m_quickSearchBtn = new QPushButton(QStringLiteral(" 速搜  Ctrl+K"));
+    m_quickSearchBtn->setObjectName(QStringLiteral("quickSearchBtn"));
+    m_quickSearchBtn->setIcon(IconFactory::icon(QStringLiteral("search"), theme.primary, theme.primary,
+                                                theme.disabledText, theme.accent));
+    m_quickSearchBtn->setIconSize(QSize(14, 14));
+    m_quickSearchBtn->setFixedWidth(122);
+    m_quickSearchBtn->setFocusPolicy(Qt::NoFocus);
+    m_quickSearchBtn->setToolTip(QStringLiteral("快速搜索并切换任意工具模块 (Ctrl+K)"));
 
     m_topLogBtn = makeRibbonAction(QStringLiteral("消息日志"), QStringLiteral("log"),
                                    QStringLiteral("显示/隐藏底部消息日志 (Ctrl+L)"), true);
@@ -188,20 +218,32 @@ void MainWindow::buildUi()
     m_topExitBtn = makeRibbonAction(QStringLiteral("退出"), QStringLiteral("exit"),
                                     QStringLiteral("安全退出程序"), false);
 
-    topLayout->addStretch(1);
+    topLayout->addWidget(m_hubBtn, 0, Qt::AlignVCenter);
+    topLayout->addWidget(divider, 0, Qt::AlignVCenter);
+    topLayout->addWidget(m_rail, 1, Qt::AlignVCenter);
+    topLayout->addWidget(m_moreToolsBtn, 0, Qt::AlignVCenter);
+    topLayout->addSpacing(4);
+    topLayout->addWidget(m_quickSearchBtn, 0, Qt::AlignVCenter);
     topLayout->addWidget(m_topLogBtn, 0, Qt::AlignVCenter);
     topLayout->addWidget(m_topHelpBtn, 0, Qt::AlignVCenter);
     topLayout->addWidget(m_topExitBtn, 0, Qt::AlignVCenter);
     root->addWidget(top);
 
-    // ---- 全宽主工作区 + 五圆点拖拽条 + 底部常驻白底消息日志框 ----
+    // ---- 全宽主工作区（工具栈 + 工具中心页）+ 五圆点拖拽条 + 底部常驻白底消息日志框 ----
+    m_bodyStack = new QStackedWidget;
+    m_bodyStack->setObjectName(QStringLiteral("bodyStack"));
     m_stack = new QStackedWidget;
     m_stack->setObjectName(QStringLiteral("toolStack"));
+    m_hubView = new ToolHubView;
+    m_bodyStack->addWidget(m_stack);
+    m_bodyStack->addWidget(m_hubView);
+    m_bodyStack->setCurrentWidget(m_stack);
+
     m_log = new LogPanel(m_platform->log());
     m_log->hide();
 
     m_splitter = ui::makeSplitter(Qt::Vertical);
-    m_splitter->addWidget(m_stack);
+    m_splitter->addWidget(m_bodyStack);
     m_splitter->addWidget(m_log);
     m_splitter->setStretchFactor(0, 1);
     m_splitter->setStretchFactor(1, 0);
@@ -222,7 +264,16 @@ void MainWindow::connectServices()
     connect(m_host, &ToolHost::viewCreated, this, &MainWindow::onViewCreated);
     connect(m_host, &ToolHost::toolFailed, this, [this](int index, const QString &error) {
         m_rail->setAvailable(index, false, error);
+        m_hubView->setAvailable(index, false, error);
     });
+    connect(m_hubBtn, &QToolButton::clicked, this, [this](bool checked) {
+        showToolHub(checked);
+    });
+    connect(m_hubView, &ToolHubView::toolActivated, this, [this](int index) {
+        selectTool(index);
+    });
+    connect(m_moreToolsBtn, &QToolButton::clicked, this, &MainWindow::showMoreToolsMenu);
+    connect(m_quickSearchBtn, &QPushButton::clicked, this, &MainWindow::openQuickLauncher);
     connect(m_platform->status(), &StatusBoard::changed, this, [this](const QString &toolId) {
         if (toolId == currentToolId())
             refreshStatus();
@@ -281,6 +332,8 @@ void MainWindow::installShortcuts()
 
     for (int i = 0; i < 9; ++i)
         add(QKeySequence(Qt::CTRL + Qt::Key_1 + i), [this, i] { selectTool(i); });
+    add(QKeySequence(Qt::CTRL + Qt::Key_0), [this] { showToolHub(!isToolHubVisible()); });
+    add(QKeySequence(Qt::CTRL + Qt::Key_K), [this] { openQuickLauncher(); });
     add(QKeySequence(Qt::ALT + Qt::Key_Up), [this] { stepTool(-1); });
     add(QKeySequence(Qt::ALT + Qt::Key_Down), [this] { stepTool(+1); });
     add(QKeySequence(Qt::CTRL + Qt::Key_PageUp), [this] { stepPage(-1); });
@@ -294,6 +347,8 @@ QString MainWindow::shortcutHelpText()
 {
     return QStringLiteral(
         "<table cellspacing='6' cellpadding='2'>"
+        "<tr><td><b>Ctrl+0</b></td><td>打开 / 返回工具中心（按分类浏览全部模块）</td></tr>"
+        "<tr><td><b>Ctrl+K</b></td><td>全局快速搜索并直达任意工具模块</td></tr>"
         "<tr><td><b>Ctrl+1 … Ctrl+9</b></td><td>切换到第 N 个工具模块</td></tr>"
         "<tr><td><b>Alt+↑ / Alt+↓</b></td><td>上一个 / 下一个工具模块</td></tr>"
         "<tr><td><b>Ctrl+PageUp / PageDown</b></td><td>当前工具的上一页 / 下一页</td></tr>"
@@ -344,6 +399,7 @@ bool MainWindow::selectTool(int index)
 {
     if (!m_host || index < 0 || index >= m_host->count() || navigationLocked())
         return false;
+    showToolHub(false);
     if (index != m_host->currentIndex())
         m_host->activate(index);
     syncRailSelection();
@@ -400,11 +456,15 @@ void MainWindow::onRailRowChanged(int row)
 void MainWindow::syncRailSelection()
 {
     const int index = currentToolIndex();
-    if (index < 0 || m_rail->currentRow() == index)
+    if (index < 0)
         return;
-    m_syncingRail = true;
-    m_rail->setCurrentRow(index);
-    m_syncingRail = false;
+    if (m_rail->currentRow() != index) {
+        m_syncingRail = true;
+        m_rail->setCurrentRow(index);
+        m_syncingRail = false;
+    }
+    if (QListWidgetItem *it = m_rail->item(index))
+        m_rail->scrollToItem(it, QAbstractItemView::EnsureVisible);
 }
 
 void MainWindow::onViewCreated(int index)
@@ -489,6 +549,12 @@ void MainWindow::refreshNavigationLock()
     }
 
     m_rail->setEnabled(!locked);
+    if (m_hubBtn)
+        m_hubBtn->setEnabled(!locked);
+    if (m_moreToolsBtn)
+        m_moreToolsBtn->setEnabled(!locked);
+    if (m_quickSearchBtn)
+        m_quickSearchBtn->setEnabled(!locked);
     for (int i = 0; i < toolCount(); ++i) {
         if (ToolView *view = m_host->view(i))
             view->setNavigationEnabled(!locked);
@@ -577,6 +643,82 @@ void MainWindow::setLogPanelVisible(bool visible)
 bool MainWindow::isLogPanelVisible() const
 {
     return !m_log->isHidden();
+}
+
+void MainWindow::showToolHub(bool visible)
+{
+    if (visible && navigationLocked()) {
+        if (m_hubBtn)
+            m_hubBtn->setChecked(false);
+        return;
+    }
+    if (!m_bodyStack || !m_hubView)
+        return;
+    m_bodyStack->setCurrentWidget(visible ? static_cast<QWidget *>(m_hubView)
+                                          : static_cast<QWidget *>(m_stack));
+    if (m_hubBtn) {
+        const QSignalBlocker blocker(m_hubBtn);
+        m_hubBtn->setChecked(visible);
+    }
+    if (visible)
+        m_hubView->focusSearch();
+}
+
+bool MainWindow::isToolHubVisible() const
+{
+    return m_bodyStack && m_bodyStack->currentWidget() == m_hubView;
+}
+
+void MainWindow::openQuickLauncher()
+{
+    if (navigationLocked() || !m_host || m_host->count() == 0)
+        return;
+    QVector<ToolInfo> infos;
+    QVector<bool> avail;
+    infos.reserve(m_host->count());
+    avail.reserve(m_host->count());
+    for (int i = 0; i < m_host->count(); ++i) {
+        infos.append(m_host->info(i));
+        avail.append(m_host->state(i) != ToolHost::State::Failed);
+    }
+    QuickLauncherDialog dlg(this);
+    dlg.setTools(infos, avail);
+    if (dlg.exec() == QDialog::Accepted && dlg.selectedToolIndex() >= 0)
+        selectTool(dlg.selectedToolIndex());
+}
+
+void MainWindow::showMoreToolsMenu()
+{
+    if (navigationLocked() || !m_host || m_host->count() == 0)
+        return;
+    const Theme &theme = Theme::workbench();
+    QMenu menu(this);
+    QMap<QString, QMenu *> catMenus;
+    QStringList catOrder;
+    for (int i = 0; i < m_host->count(); ++i) {
+        const QString cat = m_host->info(i).effectiveCategory();
+        if (!catOrder.contains(cat))
+            catOrder.append(cat);
+    }
+    for (const QString &cat : catOrder)
+        catMenus.insert(cat, menu.addMenu(cat));
+
+    for (int i = 0; i < m_host->count(); ++i) {
+        const ToolInfo info = m_host->info(i);
+        const bool ok = (m_host->state(i) != ToolHost::State::Failed);
+        QMenu *sub = catMenus.value(info.effectiveCategory());
+        QAction *act = sub->addAction(
+            ok ? IconFactory::icon(info.iconKey, theme.primary, theme.primary, theme.disabledText, theme.accent)
+               : IconFactory::icon(info.iconKey, theme.disabledText, theme.disabledText, theme.disabledText, theme.disabledText),
+            ok ? info.title : QStringLiteral("%1（不可用）").arg(info.title));
+        act->setCheckable(true);
+        act->setChecked(i == currentToolIndex() && !isToolHubVisible());
+        connect(act, &QAction::triggered, this, [this, i]() { selectTool(i); });
+    }
+    menu.addSeparator();
+    QAction *openHub = menu.addAction(QStringLiteral("打开工具中心 (Ctrl+0)"));
+    connect(openHub, &QAction::triggered, this, [this]() { showToolHub(true); });
+    menu.exec(m_moreToolsBtn->mapToGlobal(QPoint(0, m_moreToolsBtn->height())));
 }
 
 SessionState MainWindow::captureSessionState() const

@@ -10,12 +10,16 @@ add_library(tengwangge_shell STATIC
     main_window.h
     page_chrome.cpp
     page_chrome.h
+    quick_launcher.cpp
+    quick_launcher.h
     status_strip.cpp
     status_strip.h
     theme.cpp
     theme.h
     tool_host.cpp
     tool_host.h
+    tool_hub_view.cpp
+    tool_hub_view.h
     tool_rail.cpp
     tool_rail.h
     tool_registry.cpp

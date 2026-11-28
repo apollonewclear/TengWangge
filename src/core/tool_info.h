@@ -23,7 +23,13 @@ struct ToolInfo
     QString title;
     QString summary;
     QString iconKey;
-    int order = 100; // 越小越靠前；相同时保持注册顺序
+    QString category; // 业务分类（用于工具中心与 Ctrl+K 速搜分组；为空时归入“通用工具”）
+    int order = 100;  // 越小越靠前；相同时保持注册顺序
+
+    QString effectiveCategory() const
+    {
+        return category.trimmed().isEmpty() ? QStringLiteral("通用工具") : category.trimmed();
+    }
 };
 
 } // namespace tw

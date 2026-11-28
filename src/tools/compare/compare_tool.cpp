@@ -14,6 +14,7 @@ ToolInfo CompareTool::info() const
     info.title = QStringLiteral("文件对比");
     info.summary = QStringLiteral("文件夹、文本、INI 配置对比与三方合并（参考 Beyond Compare）");
     info.iconKey = QStringLiteral("compare");
+    info.category = QStringLiteral("文件与对比");
     info.order = 15;
     return info;
 }

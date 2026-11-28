@@ -368,6 +368,7 @@ ToolInfo WelcomeTool::info() const
     info.title = QStringLiteral("概览");
     info.summary = QStringLiteral("平台配置总览与键盘操作规范");
     info.iconKey = QStringLiteral("overview");
+    info.category = QStringLiteral("平台导航");
     info.order = 10;
     return info;
 }

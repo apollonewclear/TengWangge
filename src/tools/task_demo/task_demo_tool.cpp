@@ -419,6 +419,7 @@ ToolInfo TaskDemoTool::info() const
     info.title = QStringLiteral("任务演示");
     info.summary = QStringLiteral("演示长时间任务、步骤监视与导航锁定");
     info.iconKey = QStringLiteral("task");
+    info.category = QStringLiteral("任务与运维");
     info.order = 20;
     return info;
 }

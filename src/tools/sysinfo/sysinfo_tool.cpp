@@ -94,6 +94,7 @@ ToolInfo SysInfoTool::info() const
     info.title = QStringLiteral("本机信息");
     info.summary = QStringLiteral("操作系统、Qt 运行时与显示环境");
     info.iconKey = QStringLiteral("environment");
+    info.category = QStringLiteral("系统与诊断");
     info.order = 30;
     return info;
 }

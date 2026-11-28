@@ -54,6 +54,7 @@ ToolInfo NotesTool::info() const
     info.title = QStringLiteral("便签");      // 工具栏和顶栏显示的名字
     info.summary = QStringLiteral("记录临时文字");
     info.iconKey = QStringLiteral("log");     // 见下文“图标”
+    info.category = QStringLiteral("效率工具"); // 业务分类（用于工具中心与 Ctrl+K 速搜分组）
     info.order = 40;                          // 越小越靠前；相同则按注册顺序
     return info;
 }

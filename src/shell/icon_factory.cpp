@@ -261,6 +261,23 @@ void drawGlyph32(QPainter &p, const QString &key, const QColor &color, const QCo
         p.setPen(mainPen);
         p.drawLine(QPointF(26.0, 16.0), QPointF(6.5, 16.0));
         p.drawPolyline(QPolygonF({QPointF(13.0, 9.5), QPointF(6.2, 16.0), QPointF(13.0, 22.5)}));
+    } else if (key == QLatin1String("hub")) {
+        // 工具中心：3x3 紧凑模块宫格（左上主格暖橙高亮，其余钢蓝）
+        const qreal coords[3] = {5.0, 13.5, 22.0};
+        for (int r = 0; r < 3; ++r) {
+            for (int c = 0; c < 3; ++c) {
+                const bool highlight = (r == 0 && c == 0);
+                p.setPen(Qt::NoPen);
+                p.setBrush(highlight ? secondary : color);
+                p.drawRoundedRect(QRectF(coords[c], coords[r], 5.6, 5.6), 1.4, 1.4);
+            }
+        }
+    } else if (key == QLatin1String("search")) {
+        // 全局快速搜索放大镜
+        p.setPen(mainPen);
+        p.drawEllipse(QRectF(5.5, 5.5, 15.5, 15.5));
+        p.setPen(accentPen);
+        p.drawLine(QPointF(19.0, 19.0), QPointF(26.8, 26.8));
     } else {
         p.drawRoundedRect(QRectF(5.0, 5.0, 22.0, 22.0), 4.0, 4.0);
     }
@@ -277,7 +294,7 @@ QStringList IconFactory::knownKeys()
             QStringLiteral("help"),       QStringLiteral("exit"),        QStringLiteral("export"),
             QStringLiteral("compare"),    QStringLiteral("folder"),      QStringLiteral("merge"),
             QStringLiteral("save"),       QStringLiteral("swap"),        QStringLiteral("copy_right"),
-            QStringLiteral("copy_left")};
+            QStringLiteral("copy_left"),  QStringLiteral("hub"),         QStringLiteral("search")};
 }
 
 QPixmap IconFactory::pixmap(const QString &key, int size, const QColor &color,

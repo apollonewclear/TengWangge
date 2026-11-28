@@ -8,7 +8,9 @@
 #include <QFontMetrics>
 #include <QKeyEvent>
 #include <QPainter>
+#include <QScrollBar>
 #include <QStyledItemDelegate>
+#include <QWheelEvent>
 
 namespace tw {
 namespace {
@@ -116,9 +118,11 @@ ToolRail::ToolRail(QWidget *parent)
     setFrameShape(QFrame::NoFrame);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
     setUniformItemSizes(true);
     setFixedHeight(kItemHeight);
-    setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+    setMinimumWidth(kItemWidth);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     setToolTip(QString());
 }
 
@@ -166,7 +170,24 @@ bool ToolRail::isAvailable(int index) const
 
 QSize ToolRail::sizeHint() const
 {
-    return QSize(kItemWidth * qMax(1, count()) + 4, kItemHeight);
+    return QSize(kItemWidth * qBound(1, count(), 8) + 4, kItemHeight);
+}
+
+QSize ToolRail::minimumSizeHint() const
+{
+    return QSize(kItemWidth, kItemHeight);
+}
+
+void ToolRail::wheelEvent(QWheelEvent *event)
+{
+    QScrollBar *hbar = horizontalScrollBar();
+    if (hbar && hbar->maximum() > 0) {
+        const int delta = event->angleDelta().y() != 0 ? event->angleDelta().y() : event->angleDelta().x();
+        hbar->setValue(hbar->value() - delta / 2);
+        event->accept();
+        return;
+    }
+    QListWidget::wheelEvent(event);
 }
 
 void ToolRail::keyPressEvent(QKeyEvent *event)

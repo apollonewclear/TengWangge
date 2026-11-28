@@ -4,7 +4,36 @@
 
 ---
 
-## 2026-11-28 · 双架构免源码部署包发布与规范固化（x86_64 + ARM64）
+## 2026-11-28 · 第七批改进（面向 20+ 工具模块的主界面可扩展导航重构）
+
+**主题**：针对后续将持续接入 10~20+ 个业务工具的规划，重构外壳主界面导航骨架：新增 `ToolInfo::category` 业务分类、全宽「工具中心」分类卡片导航页、`Ctrl+K` 全局速搜弹窗与可横向滚动 + `»` 分类溢出菜单的弹性顶栏
+
+### 修改前备份
+- **本地 Git 备份分支**：`backup/pre-hub-dbca566`
+- **本地归档**：`/Users/Apple/Desktop/work/code/gemini/backups/tengwangge_pre_hub_dbca566.{bundle,tar.gz}`
+- **麒麟远程备份**：`/home/nusp/TengWangge_backups/TengWangge_gemini_pre_hub_dbca566.tar.gz`
+
+### 主要改动
+1. **工具业务分类元数据与新图标**（`src/core/tool_info.h`、`src/shell/icon_factory.cpp`）
+   - `ToolInfo` 新增 `category` 字段与 `effectiveCategory()`（默认回退“通用工具”，100% 兼容旧模块）；为 `welcome`、`compare`、`task-demo`、`sysinfo` 标注业务分类。
+   - `IconFactory` 新增 `hub`（3×3 宫格工具中心图标）与 `search`（放大镜速搜图标）。
+2. **「工具中心」分类卡片页与 `Ctrl+K` 快速搜索**（`src/shell/tool_hub_view.{h,cpp}`、`src/shell/quick_launcher.{h,cpp}`）
+   - `ToolHubView`：左侧分类统计表（`全部工具` + 各业务分类计数）+ 五圆点分割条 + 右侧实时检索框与自适应多列工具卡片网格，点击任意卡片即切换进入对应工具。
+   - `QuickLauncherDialog`：`Ctrl+K` 或点击顶栏「速搜 Ctrl+K」呼出，支持按名称、编码、分类、简介实时过滤，↑↓ 选择、回车直达。
+3. **弹性顶栏与导航锁联动**（`src/shell/tool_rail.{h,cpp}`、`src/shell/main_window.{h,cpp}`、`src/shell/resources/theme.qss`）
+   - `ToolRail` 改为 `Expanding` 弹性宽度 + 鼠标滚轮平滑横向滚动 + 选中自动滚动入视口，彻底消除多工具撑爆窗口宽度的问题。
+   - 顶栏左侧固定「工具中心」（`Ctrl+0`），工具数超过 6 个时自动显示 `»` 按分类分组溢出下拉菜单；导航锁持有期间同步禁用工具中心、`»` 菜单与 `Ctrl+K` 速搜。
+4. **20 模块扩展性压力测试**（`tests/ui_tests.cpp`）
+   - 新增 `window_toolHubAndQuickLauncherScaleTo20Tools`：注册 20 个工具覆盖 5 大分类，验证窗口最小宽度 ≤ 900px、分类筛选、关键字检索、快速切换与界面渲染。
+
+### 麒麟实机验证结果（KylinSec OS 3.5 / GCC 10.3.1 / Qt 5.15.2）
+- `cmake --preset release && cmake --build --preset release`：`-Wall -Wextra -Wpedantic -Werror` 零警告通过。
+- `QT_QPA_PLATFORM=offscreen ctest --preset release`：`core_tests` **48/48**、`core_layering`、`ui_tests` **47/47** 全部通过。
+- 实机截图核验 20 工具场景下的工具中心卡片网格、弹性顶栏 `»` 菜单与 `900×560` 最小窗口布局，无溢出无遮挡。
+
+---
+
+## 2026-11-28 · 双架构免源码部署包发布与规范固化（commit `dbca566`）
 
 **主题**：新增免源码直接部署打包方案并固化为长期发布约定——今后每次版本发布均同步产出 **麒麟 `x86_64`** 与 **麒麟 `aarch64`（ARM64）** 两套免源码部署包
 
