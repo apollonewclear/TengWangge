@@ -56,6 +56,8 @@ public:
     int currentHunkIndex() const { return m_currentHunk; }
     QString leftText() const;
     QString rightText() const;
+    QString leftMd5() const { return m_leftMd5; }
+    QString rightMd5() const { return m_rightMd5; }
 
 protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
@@ -72,9 +74,12 @@ private:
     void rebuildDiffOnlyTable();
     void updateHunkCounter();
     void updateDirtyLabels();
+    void updateSummaryBar();
 
     ToolServices m_services;
     cmp::TextDiffResult m_diff;
+    QString m_leftMd5;
+    QString m_rightMd5;
     int m_currentHunk = -1;
     bool m_leftDirty = false;
     bool m_rightDirty = false;
@@ -103,6 +108,13 @@ private:
     QCheckBox *m_ignoreCase = nullptr;
     QCheckBox *m_autoBackup = nullptr;
     QLineEdit *m_findEdit = nullptr;
+
+    QLabel *m_statTotal = nullptr;
+    QLabel *m_statSame = nullptr;
+    QLabel *m_statChanged = nullptr;
+    QLabel *m_statLeft = nullptr;
+    QLabel *m_statRight = nullptr;
+    QLabel *m_statMd5 = nullptr;
 
     QStackedWidget *m_viewStack = nullptr;
     DiffCodeEditor *m_leftEditor = nullptr;

@@ -10,6 +10,7 @@
 #include <QDropEvent>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QInputDialog>
@@ -140,6 +141,36 @@ IniComparePage::IniComparePage(const ToolServices &services, QWidget *parent)
     actionRow->addWidget(exportBtn);
     actionRow->addWidget(m_searchEdit);
     root->addLayout(actionRow);
+
+    // ---- 汇总统计条（节/键 KPI 徽章 + MD5 比对）----
+    auto *summaryBar = new QFrame;
+    summaryBar->setObjectName(QStringLiteral("summaryBar"));
+    auto *sumLayout = new QHBoxLayout(summaryBar);
+    sumLayout->setContentsMargins(8, 4, 8, 4);
+    sumLayout->setSpacing(6);
+
+    auto makeBadge = [](const QString &text, const char *role) {
+        QLabel *lbl = ui::makeLabel(text, role);
+        lbl->setWordWrap(false);
+        return lbl;
+    };
+    m_statSections = makeBadge(QStringLiteral("配置节: 0"), "statTotal");
+    m_statTotal = makeBadge(QStringLiteral("总键: 0"), "statTotal");
+    m_statSame = makeBadge(QStringLiteral("相同: 0 (0%)"), "statSame");
+    m_statChanged = makeBadge(QStringLiteral("值不同: 0"), "statDiff");
+    m_statLeft = makeBadge(QStringLiteral("仅左: 0"), "statLeft");
+    m_statRight = makeBadge(QStringLiteral("仅右: 0"), "statRight");
+    m_statMd5 = makeBadge(QStringLiteral("MD5: —"), "statMd5Ok");
+
+    sumLayout->addWidget(m_statSections);
+    sumLayout->addWidget(m_statTotal);
+    sumLayout->addWidget(m_statSame);
+    sumLayout->addWidget(m_statChanged);
+    sumLayout->addWidget(m_statLeft);
+    sumLayout->addWidget(m_statRight);
+    sumLayout->addStretch(1);
+    sumLayout->addWidget(m_statMd5);
+    root->addWidget(summaryBar);
 
     // ---- 左右工业分栏：左侧配置节统计表 + 右侧节键明细表 ----
     QSplitter *splitter = ui::makeSplitter(Qt::Horizontal, this);
@@ -346,16 +377,52 @@ void IniComparePage::loadSample()
 void IniComparePage::recompare()
 {
     m_diff = cmp::diffIni(m_leftDoc, m_rightDoc, m_ignoreCase->isChecked());
+    const cmp::TextEncoding reqEnc = selectedEncoding();
+    const cmp::TextEncoding leftEnc = (reqEnc == cmp::TextEncoding::Auto) ? m_leftDetectedEnc : reqEnc;
+    const cmp::TextEncoding rightEnc = (reqEnc == cmp::TextEncoding::Auto) ? m_rightDetectedEnc : reqEnc;
+    m_leftMd5 = cmp::computeTextMd5(m_leftDoc.serialize(), leftEnc);
+    m_rightMd5 = cmp::computeTextMd5(m_rightDoc.serialize(), rightEnc);
+
     rebuildSectionTable();
     rebuildEntryTable();
+    updateSummaryBar();
 
     const int totalDiff = m_diff.changedCount + m_diff.leftOnlyCount + m_diff.rightOnlyCount;
     m_services.showStatus(totalDiff == 0 ? StatusState::Success : StatusState::Info,
-                          QStringLiteral("INI 比对：相同 %1，值不同 %2，仅左侧 %3，仅右侧 %4")
+                          QStringLiteral("INI 比对：总计 %1 键（相同 %2，值不同 %3，仅左侧 %4，仅右侧 %5）")
+                              .arg(m_diff.entries.size())
                               .arg(m_diff.equalCount)
                               .arg(m_diff.changedCount)
                               .arg(m_diff.leftOnlyCount)
                               .arg(m_diff.rightOnlyCount));
+}
+
+void IniComparePage::updateSummaryBar()
+{
+    const int total = m_diff.entries.size();
+    const double pct = total > 0 ? (100.0 * m_diff.equalCount / total) : 100.0;
+    m_statSections->setText(QStringLiteral("配置节: %1").arg(m_diff.sections.size()));
+    m_statTotal->setText(QStringLiteral("总键: %1").arg(total));
+    m_statSame->setText(QStringLiteral("相同: %1 (%2%)")
+                            .arg(m_diff.equalCount)
+                            .arg(QString::number(pct, 'f', total > 0 ? 1 : 0)));
+    m_statChanged->setText(QStringLiteral("值不同: %1").arg(m_diff.changedCount));
+    m_statLeft->setText(QStringLiteral("仅左: %1").arg(m_diff.leftOnlyCount));
+    m_statRight->setText(QStringLiteral("仅右: %1").arg(m_diff.rightOnlyCount));
+
+    if (m_leftMd5.isEmpty() && m_rightMd5.isEmpty()) {
+        m_statMd5->setText(QStringLiteral("MD5: —"));
+        ui::setRole(m_statMd5, "statMd5Ok");
+        m_statMd5->setToolTip(QString());
+    } else if (m_leftMd5 == m_rightMd5) {
+        m_statMd5->setText(QStringLiteral("MD5 一致: %1").arg(m_leftMd5.left(8)));
+        ui::setRole(m_statMd5, "statMd5Ok");
+        m_statMd5->setToolTip(QStringLiteral("左右 INI 序列化内容 MD5 一致\nMD5: %1").arg(m_leftMd5));
+    } else {
+        m_statMd5->setText(QStringLiteral("MD5 不同: %1 ≠ %2").arg(m_leftMd5.left(8), m_rightMd5.left(8)));
+        ui::setRole(m_statMd5, "statMd5Diff");
+        m_statMd5->setToolTip(QStringLiteral("左侧 MD5: %1\n右侧 MD5: %2").arg(m_leftMd5, m_rightMd5));
+    }
 }
 
 void IniComparePage::rebuildSectionTable()

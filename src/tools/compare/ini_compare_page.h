@@ -43,6 +43,8 @@ public:
     const cmp::IniDiffResult &diffResult() const { return m_diff; }
     const cmp::IniDocument &leftDocument() const { return m_leftDoc; }
     const cmp::IniDocument &rightDocument() const { return m_rightDoc; }
+    QString leftMd5() const { return m_leftMd5; }
+    QString rightMd5() const { return m_rightMd5; }
 
 protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
@@ -59,6 +61,7 @@ private:
     void exportReport();
     void rebuildSectionTable();
     void rebuildEntryTable();
+    void updateSummaryBar();
     void setFilterMode(FilterMode mode);
     QVector<int> selectedDiffIndices() const;
     int selectedDiffIndex() const;
@@ -67,6 +70,8 @@ private:
     cmp::IniDocument m_leftDoc;
     cmp::IniDocument m_rightDoc;
     cmp::IniDiffResult m_diff;
+    QString m_leftMd5;
+    QString m_rightMd5;
     FilterMode m_filter = FilterMode::All;
     bool m_leftDirty = false;
     bool m_rightDirty = false;
@@ -84,6 +89,14 @@ private:
     QCheckBox *m_ignoreCase = nullptr;
     QCheckBox *m_autoBackup = nullptr;
     QLineEdit *m_searchEdit = nullptr;
+
+    QLabel *m_statSections = nullptr;
+    QLabel *m_statTotal = nullptr;
+    QLabel *m_statSame = nullptr;
+    QLabel *m_statChanged = nullptr;
+    QLabel *m_statLeft = nullptr;
+    QLabel *m_statRight = nullptr;
+    QLabel *m_statMd5 = nullptr;
 
     QTableWidget *m_sectionTable = nullptr;
     QTableWidget *m_entryTable = nullptr;

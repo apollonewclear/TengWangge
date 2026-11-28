@@ -280,6 +280,49 @@ QLabel[role="pillDanger"], QFrame[role="card"] QLabel[role="pillDanger"] {
     border-radius: 3px; padding: 2px 8px; font-size: 12px; font-weight: 600;
 }
 
+/* ---------- compare summary KPI strip ---------- */
+QFrame#summaryBar {
+    background: @panel@;
+    border: 1px solid @borderSoft@;
+    border-radius: 4px;
+}
+QFrame#summaryBar QLabel[role="hint"] { background: transparent; }
+QLabel[role="statTotal"] {
+    background: @chromeRaised@; color: @text@;
+    border: 1px solid @border@; border-radius: 3px;
+    padding: 1px 7px; font-size: 12px; font-weight: 600;
+}
+QLabel[role="statSame"] {
+    background: #eaf7ef; color: @statusSuccess@;
+    border: 1px solid #b7e4c7; border-radius: 3px;
+    padding: 1px 7px; font-size: 12px; font-weight: 600;
+}
+QLabel[role="statDiff"] {
+    background: @dangerSoft@; color: @danger@;
+    border: 1px solid #f5c2c0; border-radius: 3px;
+    padding: 1px 7px; font-size: 12px; font-weight: 600;
+}
+QLabel[role="statLeft"] {
+    background: @selectionSoft@; color: @primary@;
+    border: 1px solid @chromeSelectedBorder@; border-radius: 3px;
+    padding: 1px 7px; font-size: 12px; font-weight: 600;
+}
+QLabel[role="statRight"] {
+    background: @lockBg@; color: @lockText@;
+    border: 1px solid @lockBorder@; border-radius: 3px;
+    padding: 1px 7px; font-size: 12px; font-weight: 600;
+}
+QLabel[role="statMd5Ok"] {
+    background: #eaf7ef; color: @statusSuccess@;
+    border: 1px solid #b7e4c7; border-radius: 3px;
+    padding: 1px 7px; font-family: @monoFamily@; font-size: 11px; font-weight: 600;
+}
+QLabel[role="statMd5Diff"] {
+    background: @dangerSoft@; color: @danger@;
+    border: 1px solid #f5c2c0; border-radius: 3px;
+    padding: 1px 7px; font-family: @monoFamily@; font-size: 11px; font-weight: 600;
+}
+
 QFrame[role="card"] {
     background: @panel@; border: 1px solid @border@; border-radius: 2px;
 }

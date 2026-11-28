@@ -33,6 +33,8 @@ public:
     explicit FolderComparePage(const ToolServices &services, QWidget *parent = nullptr);
 
     void setDirectories(const QString &leftDir, const QString &rightDir);
+    void setCompareMode(cmp::FolderCompareMode mode);
+    cmp::FolderCompareMode compareMode() const;
     void setIgnorePatternsText(const QString &patterns);
     void setTreeViewMode(bool treeMode);
     bool isTreeViewMode() const { return m_treeMode; }
@@ -71,6 +73,7 @@ private:
     void rebuildViews();
     void rebuildTable();
     void rebuildTree();
+    void updateSummaryBar();
     void updateRunningUi();
     QVector<int> selectedEntryIndices() const;
     int primarySelectedEntryIndex() const;
@@ -99,7 +102,12 @@ private:
     QCheckBox *m_autoBackup = nullptr;
     QLineEdit *m_ignoreEdit = nullptr;
     QLineEdit *m_searchEdit = nullptr;
-    QLabel *m_summaryLabel = nullptr;
+    QLabel *m_statTotal = nullptr;
+    QLabel *m_statSame = nullptr;
+    QLabel *m_statDiff = nullptr;
+    QLabel *m_statLeft = nullptr;
+    QLabel *m_statRight = nullptr;
+    QLabel *m_statElapsed = nullptr;
     QProgressBar *m_progressBar = nullptr;
 
     QStackedWidget *m_viewStack = nullptr;

@@ -4,6 +4,36 @@
 
 ---
 
+## 2026-11-28 · 第八批改进（比较工具可视化汇总条 + MD5 值比对）
+
+**主题**：为「文件对比」四个子页（文件夹比较、文本比较、INI 配置比较、三方合并）增加统一语义配色的可视化汇总统计条，并全链路新增 MD5 校验值比对能力
+
+### 修改前备份
+- **本地 Git 备份分支**：`backup/pre-cmp-md5-3719c71`
+- **本地归档**：`/Users/Apple/Desktop/work/code/gemini/backups/tengwangge_pre_cmp_md5_3719c71.{bundle,tar.gz}`
+- **麒麟远程备份**：`/home/nusp/TengWangge_backups/TengWangge_gemini_pre_cmp_md5_3719c71.tar.gz`
+
+### 主要改动
+1. **比较引擎新增 MD5 计算与耗时统计**（`src/tools/compare/compare_engine.{h,cpp}`）
+   - 新增 `computeBytesMd5`、`computeTextMd5`、`computeFileMd5`（流式 64KB 分块计算，支持大文件，输出 32 位小写十六进制 MD5）。
+   - `FolderCompareMode` 新增 `ContentMd5` 模式；`FolderEntry` 新增 `leftMd5` / `rightMd5` 字段；`FolderCompareResult` 新增 `elapsedMs`（`QElapsedTimer` 扫描耗时）与 `mode` 字段。
+   - `formatFolderDiffReport` 导出报告升级为汇总报告格式，自动输出总计、相同数与一致率百分比、耗时，以及在 `ContentMd5` 模式下附带 `左侧MD5` / `右侧MD5` 列。
+2. **四页可视化汇总 KPI 条与 MD5 展示**（`src/shell/resources/theme.qss`、`src/tools/compare/{folder,text,ini,three_way_merge}_compare_page.{h,cpp}`）
+   - `theme.qss` 新增 `QFrame#summaryBar` 与语义徽章角色：`statTotal`、`statSame`（绿）、`statDiff`（红）、`statLeft`（蓝）、`statRight`（橙）、`statMd5Ok` / `statMd5Diff`（等宽 MD5 徽章）。
+   - **文件夹比较页**：下拉模式新增「内容 MD5」；汇总条展示 `总计 / 相同(一致率%) / 不同 / 仅左 / 仅右 / 耗时 ms`；明细表在「内容 MD5」模式下自动展开 `左侧 MD5` 与 `右侧 MD5` 列（显示 12 位等宽前缀，悬停 Tooltip 显示完整 32 位 MD5），树形视图同步提供 MD5 Tooltip。
+   - **文本比较页**：汇总条展示 `总计 N 行 / 相同(一致率%) / 修改 / 仅左 / 仅右` 及实时内容 `MD5 一致 / MD5 不同` 徽章（悬停展示完整 32 位 MD5）。
+   - **INI 配置比较页**：汇总条展示 `配置节 / 总键 / 相同(一致率%) / 值不同 / 仅左 / 仅右` 及序列化内容实时 `MD5 一致 / MD5 不同` 徽章。
+   - **三方合并页**：汇总条展示 `变更块 / 自动合并 / 已解决冲突 / 待解决冲突 / 输出行数`，随冲突解决与手动编辑实时联动。
+3. **自动化测试补充**（`tests/ui_tests.cpp`）
+   - 新增 `compare_md5AndSummaryStats`：覆盖已知 RFC 1321 MD5 向量校验、`computeFileMd5`、文件夹 `ContentMd5` 模式与报告导出校验、文本/INI 对比页实时 MD5 一致与差异校验。
+
+### 麒麟实机验证结果（KylinSec OS 3.5 / GCC 10.3.1 / Qt 5.15.2）
+- `cmake --build --preset release`：`-Wall -Wextra -Wpedantic -Werror` 零警告通过。
+- `QT_QPA_PLATFORM=offscreen ctest --preset release`：`core_tests` **48/48**、`core_layering`、`ui_tests` **48/48** 全部通过。
+- 实机截图视觉核验 `compare-folder-md5.png`、`compare-text.png`、`compare-ini.png`、`compare-merge.png`，所有 KPI 徽章、MD5 双列与等宽摘要均对齐清晰、无横向溢出。
+
+---
+
 ## 2026-11-28 · 第七批改进（面向 20+ 工具模块的主界面可扩展导航重构）
 
 **主题**：针对后续将持续接入 10~20+ 个业务工具的规划，重构外壳主界面导航骨架：新增 `ToolInfo::category` 业务分类、全宽「工具中心」分类卡片导航页、`Ctrl+K` 全局速搜弹窗与可横向滚动 + `»` 分类溢出菜单的弹性顶栏

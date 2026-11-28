@@ -123,6 +123,11 @@ bool recordCompareHistory(const QString &dataDir, const QString &category,
 
 QStringList parseIgnorePatterns(const QString &rawText);
 
+// MD5 校验摘要计算（32 位小写十六进制）。
+QString computeBytesMd5(const QByteArray &bytes);
+QString computeTextMd5(const QString &text, TextEncoding encoding = TextEncoding::Utf8);
+QString computeFileMd5(const QString &path, bool *ok = nullptr);
+
 // ============================================================================
 // 2. 三方合并（Base / Left / Right -> Output）
 // ============================================================================
@@ -247,6 +252,7 @@ QString formatIniDiffReport(const QString &leftLabel, const QString &rightLabel,
 enum class FolderCompareMode
 {
     SizeAndTime,
+    ContentMd5,
     ContentSha256
 };
 
@@ -270,6 +276,8 @@ struct FolderEntry
     qint64 rightSize = 0;
     QDateTime leftMtime;
     QDateTime rightMtime;
+    QString leftMd5;
+    QString rightMd5;
     FolderEntryStatus status = FolderEntryStatus::Same;
 };
 
@@ -287,6 +295,8 @@ struct FolderCompareResult
     int diffCount = 0;
     int leftOnlyCount = 0;
     int rightOnlyCount = 0;
+    qint64 elapsedMs = 0;
+    FolderCompareMode mode = FolderCompareMode::SizeAndTime;
     bool canceled = false;
 };
 

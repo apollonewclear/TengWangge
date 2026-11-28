@@ -6,6 +6,7 @@
 #include <QBrush>
 #include <QCheckBox>
 #include <QFileDialog>
+#include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -152,6 +153,32 @@ ThreeWayMergePage::ThreeWayMergePage(const ToolServices &services, QWidget *pare
     actionRow->addWidget(sampleBtn);
     root->addLayout(actionRow);
 
+    // ---- 汇总统计条（变更块与冲突解决进度）----
+    auto *summaryBar = new QFrame;
+    summaryBar->setObjectName(QStringLiteral("summaryBar"));
+    auto *sumLayout = new QHBoxLayout(summaryBar);
+    sumLayout->setContentsMargins(8, 4, 8, 4);
+    sumLayout->setSpacing(6);
+
+    auto makeBadge = [](const QString &text, const char *role) {
+        QLabel *lbl = ui::makeLabel(text, role);
+        lbl->setWordWrap(false);
+        return lbl;
+    };
+    m_statTotal = makeBadge(QStringLiteral("变更块: 0"), "statTotal");
+    m_statAuto = makeBadge(QStringLiteral("自动合并: 0"), "statSame");
+    m_statResolved = makeBadge(QStringLiteral("已解决冲突: 0"), "statLeft");
+    m_statUnresolved = makeBadge(QStringLiteral("待解决冲突: 0"), "statDiff");
+    m_statOutLines = makeBadge(QStringLiteral("输出: 0 行"), "hint");
+
+    sumLayout->addWidget(m_statTotal);
+    sumLayout->addWidget(m_statAuto);
+    sumLayout->addWidget(m_statResolved);
+    sumLayout->addWidget(m_statUnresolved);
+    sumLayout->addStretch(1);
+    sumLayout->addWidget(m_statOutLines);
+    root->addWidget(summaryBar);
+
     // ---- 上下分栏：上方 3 栏源视图，下方 块清单 + 可编辑输出 ----
     QSplitter *vSplit = ui::makeSplitter(Qt::Vertical, this);
 
@@ -264,6 +291,7 @@ ThreeWayMergePage::ThreeWayMergePage(const ToolServices &services, QWidget *pare
     connect(m_outputEdit, &QPlainTextEdit::textChanged, this, [this]() {
         if (!m_suppressOutputSignal)
             m_outputManuallyEdited = true;
+        updateSummaryBar();
     });
 
     auto bind = [this](const QKeySequence &seq, const std::function<void()> &fn) {
@@ -419,6 +447,22 @@ void ThreeWayMergePage::updateConflictBadge()
         ui::setRole(m_conflictBadge, "pill");
         m_services.showStatus(StatusState::Success, QStringLiteral("三方合并无未解决冲突，可直接保存输出"));
     }
+    updateSummaryBar();
+}
+
+void ThreeWayMergePage::updateSummaryBar()
+{
+    const int totalChanges = m_result.autoMergedCount + m_result.conflictCount;
+    const int unresolved = m_result.unresolvedConflictCount();
+    const int resolved = qMax(0, m_result.conflictCount - unresolved);
+    const int outLines = cmp::splitLines(m_outputEdit->toPlainText()).size();
+
+    m_statTotal->setText(QStringLiteral("变更块: %1").arg(totalChanges));
+    m_statAuto->setText(QStringLiteral("自动合并: %1").arg(m_result.autoMergedCount));
+    m_statResolved->setText(QStringLiteral("已解决冲突: %1").arg(resolved));
+    m_statUnresolved->setText(QStringLiteral("待解决冲突: %1").arg(unresolved));
+    ui::setRole(m_statUnresolved, unresolved > 0 ? "statDiff" : "statSame");
+    m_statOutLines->setText(QStringLiteral("输出: %1 行").arg(outLines));
 }
 
 void ThreeWayMergePage::highlightChunkInSources(int chunkIndex)

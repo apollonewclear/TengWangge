@@ -44,6 +44,7 @@ private:
     void rebuildChunkTable();
     void refreshOutputEditor();
     void updateConflictBadge();
+    void updateSummaryBar();
     void highlightChunkInSources(int chunkIndex);
     int selectedChunkIndex() const;
 
@@ -59,6 +60,12 @@ private:
 
     QLabel *m_conflictBadge = nullptr;
     QCheckBox *m_autoBackup = nullptr;
+
+    QLabel *m_statTotal = nullptr;
+    QLabel *m_statAuto = nullptr;
+    QLabel *m_statResolved = nullptr;
+    QLabel *m_statUnresolved = nullptr;
+    QLabel *m_statOutLines = nullptr;
 
     QPlainTextEdit *m_leftView = nullptr;
     QPlainTextEdit *m_baseView = nullptr;

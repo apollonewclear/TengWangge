@@ -3,6 +3,7 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QDirIterator>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
@@ -726,6 +727,35 @@ QStringList parseIgnorePatterns(const QString &rawText)
     return out;
 }
 
+QString computeBytesMd5(const QByteArray &bytes)
+{
+    return QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Md5).toHex());
+}
+
+QString computeTextMd5(const QString &text, TextEncoding encoding)
+{
+    return computeBytesMd5(encodeText(text, encoding));
+}
+
+QString computeFileMd5(const QString &path, bool *ok)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        if (ok)
+            *ok = false;
+        return {};
+    }
+    QCryptographicHash hash(QCryptographicHash::Md5);
+    if (!hash.addData(&file)) {
+        if (ok)
+            *ok = false;
+        return {};
+    }
+    if (ok)
+        *ok = true;
+    return QString::fromLatin1(hash.result().toHex());
+}
+
 // ============================================================================
 // 2. Three-Way Merge
 // ============================================================================
@@ -1262,7 +1292,11 @@ FolderCompareResult compareFolders(
     const std::function<bool()> &isCanceled,
     const std::function<void(int percent, const QString &status)> &onProgress)
 {
+    QElapsedTimer timer;
+    timer.start();
+
     FolderCompareResult result;
+    result.mode = options.mode;
     QMap<QString, QFileInfo> leftMap;
     QMap<QString, QFileInfo> rightMap;
 
@@ -1327,11 +1361,15 @@ FolderCompareResult compareFolders(
             const QFileInfo &fi = leftMap.value(rel);
             e.leftSize = fi.size();
             e.leftMtime = fi.lastModified();
+            if (options.mode == FolderCompareMode::ContentMd5)
+                e.leftMd5 = computeFileMd5(fi.filePath());
         }
         if (hasR) {
             const QFileInfo &fi = rightMap.value(rel);
             e.rightSize = fi.size();
             e.rightMtime = fi.lastModified();
+            if (options.mode == FolderCompareMode::ContentMd5)
+                e.rightMd5 = computeFileMd5(fi.filePath());
         }
 
         if (hasL && !hasR) {
@@ -1342,7 +1380,9 @@ FolderCompareResult compareFolders(
             ++result.rightOnlyCount;
         } else {
             bool same = false;
-            if (options.mode == FolderCompareMode::ContentSha256) {
+            if (options.mode == FolderCompareMode::ContentMd5) {
+                same = !e.leftMd5.isEmpty() && (e.leftMd5 == e.rightMd5);
+            } else if (options.mode == FolderCompareMode::ContentSha256) {
                 if (e.leftSize == e.rightSize) {
                     bool okL = false;
                     bool okR = false;
@@ -1380,6 +1420,7 @@ FolderCompareResult compareFolders(
     if (onProgress && total == 0)
         onProgress(100, QStringLiteral("目录扫描完成"));
 
+    result.elapsedMs = timer.elapsed();
     return result;
 }
 
@@ -1431,14 +1472,24 @@ QString formatFolderDiffReport(const QString &leftDir, const QString &rightDir,
 {
     QString report;
     QTextStream ts(&report);
-    ts << QStringLiteral("# 文件夹比较报告\n");
+    const int total = result.entries.size();
+    const double samePct = total > 0 ? (100.0 * result.sameCount / total) : 100.0;
+    const bool showMd5 = (result.mode == FolderCompareMode::ContentMd5);
+
+    ts << QStringLiteral("# 文件夹比较汇总报告\n");
     ts << QStringLiteral("左侧目录：%1\n右侧目录：%2\n").arg(leftDir, rightDir);
-    ts << QStringLiteral("统计：相同 %1，差异 %2，仅左侧 %3，仅右侧 %4\n\n")
+    ts << QStringLiteral("汇总统计：总计 %1 项，相同 %2 项（%3%），不同 %4 项，仅左侧 %5 项，仅右侧 %6 项，耗时 %7 ms\n\n")
+              .arg(total)
               .arg(result.sameCount)
+              .arg(QString::number(samePct, 'f', 1))
               .arg(result.diffCount)
               .arg(result.leftOnlyCount)
-              .arg(result.rightOnlyCount);
-    ts << QStringLiteral("相对路径\t状态\t左侧大小\t右侧大小\n");
+              .arg(result.rightOnlyCount)
+              .arg(result.elapsedMs);
+    if (showMd5)
+        ts << QStringLiteral("相对路径\t状态\t左侧大小\t左侧MD5\t右侧大小\t右侧MD5\n");
+    else
+        ts << QStringLiteral("相对路径\t状态\t左侧大小\t右侧大小\n");
     for (const FolderEntry &e : result.entries) {
         QString st;
         switch (e.status) {
@@ -1449,10 +1500,19 @@ QString formatFolderDiffReport(const QString &leftDir, const QString &rightDir,
         case FolderEntryStatus::LeftOnly: st = QStringLiteral("仅左侧"); break;
         case FolderEntryStatus::RightOnly: st = QStringLiteral("仅右侧"); break;
         }
-        ts << QStringLiteral("%1\t%2\t%3\t%4\n")
-                  .arg(e.relPath, st)
-                  .arg(e.leftExists ? QString::number(e.leftSize) : QStringLiteral("-"))
-                  .arg(e.rightExists ? QString::number(e.rightSize) : QStringLiteral("-"));
+        if (showMd5) {
+            ts << QStringLiteral("%1\t%2\t%3\t%4\t%5\t%6\n")
+                      .arg(e.relPath, st)
+                      .arg(e.leftExists ? QString::number(e.leftSize) : QStringLiteral("-"))
+                      .arg(e.leftMd5.isEmpty() ? QStringLiteral("-") : e.leftMd5)
+                      .arg(e.rightExists ? QString::number(e.rightSize) : QStringLiteral("-"))
+                      .arg(e.rightMd5.isEmpty() ? QStringLiteral("-") : e.rightMd5);
+        } else {
+            ts << QStringLiteral("%1\t%2\t%3\t%4\n")
+                      .arg(e.relPath, st)
+                      .arg(e.leftExists ? QString::number(e.leftSize) : QStringLiteral("-"))
+                      .arg(e.rightExists ? QString::number(e.rightSize) : QStringLiteral("-"));
+        }
     }
     return report;
 }

@@ -11,6 +11,7 @@
 #include <QDropEvent>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -353,6 +354,34 @@ TextComparePage::TextComparePage(const ToolServices &services, QWidget *parent)
     actionRow->addWidget(exportBtn);
     root->addLayout(actionRow);
 
+    // ---- 汇总统计条（行数 KPI 徽章 + 实时 MD5 比对）----
+    auto *summaryBar = new QFrame;
+    summaryBar->setObjectName(QStringLiteral("summaryBar"));
+    auto *sumLayout = new QHBoxLayout(summaryBar);
+    sumLayout->setContentsMargins(8, 4, 8, 4);
+    sumLayout->setSpacing(6);
+
+    auto makeBadge = [](const QString &text, const char *role) {
+        QLabel *lbl = ui::makeLabel(text, role);
+        lbl->setWordWrap(false);
+        return lbl;
+    };
+    m_statTotal = makeBadge(QStringLiteral("总计: 0 行"), "statTotal");
+    m_statSame = makeBadge(QStringLiteral("相同: 0 (0%)"), "statSame");
+    m_statChanged = makeBadge(QStringLiteral("修改: 0"), "statDiff");
+    m_statLeft = makeBadge(QStringLiteral("仅左: 0"), "statLeft");
+    m_statRight = makeBadge(QStringLiteral("仅右: 0"), "statRight");
+    m_statMd5 = makeBadge(QStringLiteral("MD5: —"), "statMd5Ok");
+
+    sumLayout->addWidget(m_statTotal);
+    sumLayout->addWidget(m_statSame);
+    sumLayout->addWidget(m_statChanged);
+    sumLayout->addWidget(m_statLeft);
+    sumLayout->addWidget(m_statRight);
+    sumLayout->addStretch(1);
+    sumLayout->addWidget(m_statMd5);
+    root->addWidget(summaryBar);
+
     // ---- 视图栈：0 = 并排编辑视图；1 = 仅差异行表视图 ----
     m_viewStack = new QStackedWidget;
 
@@ -689,8 +718,16 @@ void TextComparePage::recompare()
     opt.ignoreWhitespace = m_ignoreWs->isChecked();
     opt.ignoreCase = m_ignoreCase->isChecked();
 
-    m_diff = cmp::diffLines(cmp::splitLines(m_leftEditor->toPlainText()),
-                            cmp::splitLines(m_rightEditor->toPlainText()), opt);
+    const QString leftPlain = m_leftEditor->toPlainText();
+    const QString rightPlain = m_rightEditor->toPlainText();
+    m_diff = cmp::diffLines(cmp::splitLines(leftPlain), cmp::splitLines(rightPlain), opt);
+
+    const cmp::TextEncoding reqEnc = selectedEncoding();
+    const cmp::TextEncoding leftEnc = (reqEnc == cmp::TextEncoding::Auto) ? m_leftDetectedEnc : reqEnc;
+    const cmp::TextEncoding rightEnc = (reqEnc == cmp::TextEncoding::Auto) ? m_rightDetectedEnc : reqEnc;
+    m_leftMd5 = cmp::computeTextMd5(leftPlain, leftEnc);
+    m_rightMd5 = cmp::computeTextMd5(rightPlain, rightEnc);
+
     if (m_diff.hunks.isEmpty())
         m_currentHunk = -1;
     else if (m_currentHunk < 0 || m_currentHunk >= m_diff.hunks.size())
@@ -700,14 +737,43 @@ void TextComparePage::recompare()
     if (m_viewStack->currentIndex() == 1)
         rebuildDiffOnlyTable();
     updateHunkCounter();
+    updateSummaryBar();
 
     m_services.showStatus(m_diff.hunks.isEmpty() ? StatusState::Success : StatusState::Info,
-                          QStringLiteral("文本比对：相同 %1 行，修改 %2 行，仅左 %3 行，仅右 %4 行（%5 处差异块）")
+                          QStringLiteral("文本比对：总计 %1 行（相同 %2，修改 %3，仅左 %4，仅右 %5，%6 处差异块）")
+                              .arg(m_diff.rows.size())
                               .arg(m_diff.equalCount)
                               .arg(m_diff.changedCount)
                               .arg(m_diff.leftOnlyCount)
                               .arg(m_diff.rightOnlyCount)
                               .arg(m_diff.hunks.size()));
+}
+
+void TextComparePage::updateSummaryBar()
+{
+    const int total = m_diff.rows.size();
+    const double pct = total > 0 ? (100.0 * m_diff.equalCount / total) : 100.0;
+    m_statTotal->setText(QStringLiteral("总计: %1 行").arg(total));
+    m_statSame->setText(QStringLiteral("相同: %1 (%2%)")
+                            .arg(m_diff.equalCount)
+                            .arg(QString::number(pct, 'f', total > 0 ? 1 : 0)));
+    m_statChanged->setText(QStringLiteral("修改: %1").arg(m_diff.changedCount));
+    m_statLeft->setText(QStringLiteral("仅左: %1").arg(m_diff.leftOnlyCount));
+    m_statRight->setText(QStringLiteral("仅右: %1").arg(m_diff.rightOnlyCount));
+
+    if (m_leftMd5.isEmpty() && m_rightMd5.isEmpty()) {
+        m_statMd5->setText(QStringLiteral("MD5: —"));
+        ui::setRole(m_statMd5, "statMd5Ok");
+        m_statMd5->setToolTip(QString());
+    } else if (m_leftMd5 == m_rightMd5) {
+        m_statMd5->setText(QStringLiteral("MD5 一致: %1").arg(m_leftMd5.left(8)));
+        ui::setRole(m_statMd5, "statMd5Ok");
+        m_statMd5->setToolTip(QStringLiteral("左右内容 MD5 完全一致\nMD5: %1").arg(m_leftMd5));
+    } else {
+        m_statMd5->setText(QStringLiteral("MD5 不同: %1 ≠ %2").arg(m_leftMd5.left(8), m_rightMd5.left(8)));
+        ui::setRole(m_statMd5, "statMd5Diff");
+        m_statMd5->setToolTip(QStringLiteral("左侧 MD5: %1\n右侧 MD5: %2").arg(m_leftMd5, m_rightMd5));
+    }
 }
 
 void TextComparePage::applyHighlights()

@@ -37,6 +37,7 @@
 #include <QSignalSpy>
 #include <QStackedWidget>
 #include <QTabBar>
+#include <QTableWidget>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QVBoxLayout>
@@ -274,6 +275,7 @@ private slots:
     void compare_iniSectionKeyDiffAndPreserveComments();
     void compare_encodingAutoDetectAndHistory();
     void compare_folderDiffAndUiWorkflow();
+    void compare_md5AndSummaryStats();
 };
 
 // ---------------------------------------------------------------------------
@@ -1374,8 +1376,16 @@ void UiTests::compare_folderDiffAndUiWorkflow()
     QVERIFY(cmpTool->folderPage() && cmpTool->textPage() && cmpTool->iniPage() && cmpTool->mergePage());
     cmpTool->folderPage()->setDirectories(leftDir, rightDir);
     cmpTool->folderPage()->setIgnorePatternsText(QStringLiteral(".git;*.bak;*.tmp"));
+    cmpTool->folderPage()->setCompareMode(cmp::FolderCompareMode::ContentMd5);
     cmpTool->folderPage()->compareSyncForTest();
     QCOMPARE(cmpTool->folderPage()->result().entries.size(), 4);
+    QVERIFY(!cmpTool->folderPage()->tableWidget()->isColumnHidden(4));
+    QVERIFY(!cmpTool->folderPage()->tableWidget()->isColumnHidden(8));
+    shot(&window, QStringLiteral("compare-folder-md5"));
+
+    cmpTool->folderPage()->setCompareMode(cmp::FolderCompareMode::SizeAndTime);
+    cmpTool->folderPage()->compareSyncForTest();
+    QVERIFY(cmpTool->folderPage()->tableWidget()->isColumnHidden(4));
     shot(&window, QStringLiteral("compare-folder"));
 
     // 切换树形视图并验证目录节点构建
@@ -1404,6 +1414,84 @@ void UiTests::compare_folderDiffAndUiWorkflow()
     shot(&window, QStringLiteral("compare-merge"));
     cmpTool->mergePage()->resolveAllConflicts(cmp::MergeResolution::UseLeft);
     QCOMPARE(cmpTool->mergePage()->mergeResult().unresolvedConflictCount(), 0);
+}
+
+void UiTests::compare_md5AndSummaryStats()
+{
+    // 1. 已知 MD5 向量校验（echo "hello" | md5sum）
+    const QString expectedHelloMd5 = QStringLiteral("b1946ac92492d2347c6235b4d2611184");
+    QCOMPARE(cmp::computeBytesMd5(QByteArrayLiteral("hello\n")), expectedHelloMd5);
+    QCOMPARE(cmp::computeTextMd5(QStringLiteral("hello\n"), cmp::TextEncoding::Utf8), expectedHelloMd5);
+
+    QTemporaryDir dir;
+    const QString leftDir = dir.filePath(QStringLiteral("l"));
+    const QString rightDir = dir.filePath(QStringLiteral("r"));
+    QVERIFY(QDir().mkpath(leftDir));
+    QVERIFY(QDir().mkpath(rightDir));
+
+    const QString sameL = leftDir + QStringLiteral("/same.txt");
+    const QString sameR = rightDir + QStringLiteral("/same.txt");
+    const QString diffL = leftDir + QStringLiteral("/diff.txt");
+    const QString diffR = rightDir + QStringLiteral("/diff.txt");
+    QVERIFY(cmp::saveTextFileWithBackup(sameL, QStringLiteral("hello\n"), false));
+    QVERIFY(cmp::saveTextFileWithBackup(sameR, QStringLiteral("hello\n"), false));
+    QVERIFY(cmp::saveTextFileWithBackup(diffL, QStringLiteral("v1\n"), false));
+    QVERIFY(cmp::saveTextFileWithBackup(diffR, QStringLiteral("v2\n"), false));
+
+    bool md5Ok = false;
+    QCOMPARE(cmp::computeFileMd5(sameL, &md5Ok), expectedHelloMd5);
+    QVERIFY(md5Ok);
+
+    // 2. 文件夹 ContentMd5 模式填充左右 MD5、统计耗时并在报告中输出 MD5 与一致率
+    cmp::FolderCompareOptions opts;
+    opts.mode = cmp::FolderCompareMode::ContentMd5;
+    const cmp::FolderCompareResult fres = cmp::compareFolders(leftDir, rightDir, opts);
+    QCOMPARE(fres.mode, cmp::FolderCompareMode::ContentMd5);
+    QCOMPARE(fres.sameCount, 1);
+    QCOMPARE(fres.diffCount, 1);
+    QVERIFY(fres.elapsedMs >= 0);
+
+    bool checkedSame = false;
+    bool checkedDiff = false;
+    for (const cmp::FolderEntry &e : fres.entries) {
+        if (e.relPath == QLatin1String("same.txt")) {
+            QCOMPARE(e.leftMd5, expectedHelloMd5);
+            QCOMPARE(e.rightMd5, expectedHelloMd5);
+            QCOMPARE(e.status, cmp::FolderEntryStatus::Same);
+            checkedSame = true;
+        } else if (e.relPath == QLatin1String("diff.txt")) {
+            QVERIFY(!e.leftMd5.isEmpty() && !e.rightMd5.isEmpty());
+            QVERIFY(e.leftMd5 != e.rightMd5);
+            QCOMPARE(e.status, cmp::FolderEntryStatus::Different);
+            checkedDiff = true;
+        }
+    }
+    QVERIFY(checkedSame && checkedDiff);
+
+    const QString report = cmp::formatFolderDiffReport(leftDir, rightDir, fres);
+    QVERIFY(report.contains(expectedHelloMd5));
+    QVERIFY(report.contains(QStringLiteral("50.0%")));
+
+    // 3. 文本对比页与 INI 对比页实时 MD5 一致/不同校验
+    ToolRegistry registry;
+    auto tool = std::make_unique<CompareTool>();
+    CompareTool *cmpTool = tool.get();
+    QVERIFY(registry.add(std::move(tool)));
+    auto platform = std::make_unique<PlatformServices>(DataPaths(dir.path() + QStringLiteral("/data")));
+    MainWindow window(std::move(platform), std::move(registry));
+    window.show();
+
+    cmpTool->textPage()->setTexts(QStringLiteral("hello\n"), QStringLiteral("hello\n"));
+    QCOMPARE(cmpTool->textPage()->leftMd5(), expectedHelloMd5);
+    QCOMPARE(cmpTool->textPage()->rightMd5(), expectedHelloMd5);
+
+    cmpTool->textPage()->setTexts(QStringLiteral("hello\n"), QStringLiteral("world\n"));
+    QVERIFY(cmpTool->textPage()->leftMd5() != cmpTool->textPage()->rightMd5());
+
+    cmpTool->iniPage()->setContents(QStringLiteral("[G]\nk = 1\n"), QStringLiteral("[G]\nk = 1\n"));
+    QCOMPARE(cmpTool->iniPage()->leftMd5(), cmpTool->iniPage()->rightMd5());
+    cmpTool->iniPage()->setContents(QStringLiteral("[G]\nk = 1\n"), QStringLiteral("[G]\nk = 2\n"));
+    QVERIFY(cmpTool->iniPage()->leftMd5() != cmpTool->iniPage()->rightMd5());
 }
 
 QTEST_MAIN(UiTests)
