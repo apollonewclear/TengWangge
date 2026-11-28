@@ -35,10 +35,10 @@
   - 文件夹比较默认模式切换为「内容 MD5」，且无论选择哪种模式均全量计算双方 MD5、`左侧 MD5` / `右侧 MD5` 两列常显并对一致/不同做绿/红着色；
   - 新增「示例」按钮（`FolderComparePage::loadSample()`），一键在隔离数据目录生成 5 个示例文件并立即对比；
   - 汇总条与导出报告新增独立 MD5 汇总统计（`MD5一致` / `MD5不同`）。
-- **双架构免源码包已刷新**（基于 commit `06ff85a`，详见 [docs/DEPLOYMENT.md](DEPLOYMENT.md)）：
-  - `TengWangge-0.1.0-kylin-x86_64.tar.gz`（SHA-256: `390a8b0cad37b5723ccc3b54596088ea8dd058d6bcc8ecca32505d7bfee827ef`）
-  - `TengWangge-0.1.0-kylin-x86_64-lite.tar.gz`（SHA-256: `6d43dd0aba64544e123ef8c990a08e9f972f9548c092dfc7da11e7ac818b368f`）
-  - `TengWangge-0.1.0-kylin-aarch64.tar.gz`（SHA-256: `0233f201734f42b896877bf8fd1003ff8f6aae04897cdfa1881ac431682813b1`）
+- **双架构免源码包已刷新**（基于 commit `bacd06c`，详见 [docs/DEPLOYMENT.md](DEPLOYMENT.md)）：
+  - `TengWangge-0.1.0-kylin-x86_64.tar.gz`（SHA-256: `e2115483a76550c959865b7f1cdaacfb5579c75f395d4a0e0db51cec28b5542d`）
+  - `TengWangge-0.1.0-kylin-x86_64-lite.tar.gz`（SHA-256: `2f15e2f9689364730d1a461d214dd9a646fa0f438866bf689cc9d4f164e2c0a2`）
+  - `TengWangge-0.1.0-kylin-aarch64.tar.gz`（SHA-256: `08b8640b1b9bc11dcfc599883e71e147bbb0f5f7d598c38240096e903e3f7e4d`）
 
 ---
 
