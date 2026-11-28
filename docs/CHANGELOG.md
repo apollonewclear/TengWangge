@@ -31,6 +31,10 @@
 - `cmake --build --preset release`：`-Wall -Wextra -Wpedantic -Werror` 零警告通过。
 - `QT_QPA_PLATFORM=offscreen ctest --preset release`：`core_tests` **48/48**、`core_layering`、`ui_tests` **48/48** 全部通过。
 - 实机截图视觉核验 `compare-folder-md5.png`、`compare-text.png`、`compare-ini.png`、`compare-merge.png`，所有 KPI 徽章、MD5 双列与等宽摘要均对齐清晰、无横向溢出。
+- **双架构免源码包已刷新**（基于 commit `06ff85a`，详见 [docs/DEPLOYMENT.md](DEPLOYMENT.md)）：
+  - `TengWangge-0.1.0-kylin-x86_64.tar.gz`（SHA-256: `390a8b0cad37b5723ccc3b54596088ea8dd058d6bcc8ecca32505d7bfee827ef`）
+  - `TengWangge-0.1.0-kylin-x86_64-lite.tar.gz`（SHA-256: `6d43dd0aba64544e123ef8c990a08e9f972f9548c092dfc7da11e7ac818b368f`）
+  - `TengWangge-0.1.0-kylin-aarch64.tar.gz`（SHA-256: `0233f201734f42b896877bf8fd1003ff8f6aae04897cdfa1881ac431682813b1`）
 
 ---
 
