@@ -4,7 +4,26 @@
 
 ---
 
-## 2026-11-27 · 第六批改进（文件对比模块专业增强：多编码探测、树形视图、快捷键与历史会话）
+## 2026-11-28 · 双架构免源码部署包发布与规范固化（x86_64 + ARM64）
+
+**主题**：新增免源码直接部署打包方案并固化为长期发布约定——今后每次版本发布均同步产出 **麒麟 `x86_64`** 与 **麒麟 `aarch64`（ARM64）** 两套免源码部署包
+
+### 产出与校验（基于 commit `5c7671d`）
+- **x86_64 便携全量版**（23 MB）：`TengWangge-0.1.0-kylin-x86_64.tar.gz`（SHA-256: `4637a688c8254f118e73fed8fbf71a57924b3738a5e6aca34cc47ee67c744d92`）
+- **x86_64 轻量版**（312 KB）：`TengWangge-0.1.0-kylin-x86_64-lite.tar.gz`（SHA-256: `23788864d81ba265ff51c7c2f2d39f6cf93c73ac662bee3d30383cac5dff7b4f`）
+- **ARM64 便携全量版**（27 MB）：`TengWangge-0.1.0-kylin-aarch64.tar.gz`（SHA-256: `ab4b4ecbd90194f3a471123f6a6e685b9b1057a097f718c7d9e6bd441e292008`）
+
+### 双架构验证结果
+- **x86_64（KylinSec OS 3.5）**：在洁净目录分别通过系统 Qt5 模式与 `TENGWANGGE_USE_BUNDLED_QT=1` 兜底模式启动与渲染验证。
+- **ARM64（`openEuler 22.03 LTS aarch64` / `glibc 2.34`，同源 `ky3_5.aarch64`）**：原生编译零警告，`core_tests` **48/48**、`core_layering`、`ui_tests` **46/46** 全部通过；在无 Qt5 洁净容器验证 `bin/TengWangge` 与 `plugins/platforms/libqxcb.so` 均 **0 missing libs** 并成功渲染。
+
+### 文档更新
+- 新增 [docs/DEPLOYMENT.md](DEPLOYMENT.md)：固化 `x86_64` + `aarch64` 双架构构建、洁净验证、SHA-256 校验与目标机解压即用规范。
+- 更新 `README.md`：补充双架构验证环境说明与部署规范链接。
+
+---
+
+## 2026-11-27 · 第六批改进（commit `5c7671d`）
 
 **主题**：围绕麒麟电力现场高频使用场景，深度增强 `compare`（文件对比）模块的编码兼容、目录浏览、批量同步、文内检索与键盘效率
 

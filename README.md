@@ -9,7 +9,7 @@
 - 界面为简体中文；不含密钥、凭据，不改系统目录
 - 数据目录是产品自己的隔离路径，不依赖本机上任何其他产品的路径
 
-文档：[架构说明](docs/ARCHITECTURE.md) · [如何新增一个工具](docs/ADDING_A_TOOL.md) · [变更记录](docs/CHANGELOG.md)
+文档：[架构说明](docs/ARCHITECTURE.md) · [如何新增一个工具](docs/ADDING_A_TOOL.md) · [双架构部署规范（x86_64 + ARM64）](docs/DEPLOYMENT.md) · [变更记录](docs/CHANGELOG.md)
 
 ## 目录
 
@@ -143,8 +143,9 @@ TENGWANGGE_SCREENSHOT_DIR=/tmp/tw-shots QT_QPA_PLATFORM=offscreen ./build/tests/
 
 ## 验证状态
 
-本仓库在下列环境验证过（全部 `-DTENGWANGGE_WARNINGS_AS_ERRORS=ON`，三类测试全部通过）：
-- **麒麟 KylinSec OS 3.5**（内核 `4.19.90-2408.1.0.0288.kb30.ky3_5.x86_64`，GCC 10.3.1，CMake 3.22.0，Qt 5.15.2）
+本仓库在下列环境验证过（全部 `-DTENGWANGGE_WARNINGS_AS_ERRORS=ON`，三类测试全部通过；每次发版均同步产出 `x86_64` 与 `aarch64` 两套免源码部署包，详见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)）：
+- **麒麟 KylinSec OS 3.5（x86_64）**（内核 `4.19.90-2408.1.0.0288.kb30.ky3_5.x86_64`，GCC 10.3.1，CMake 3.22.0，Qt 5.15.2）
+- **麒麟 KylinSec OS 3.5 / openEuler 22.03 LTS（ARM64 / aarch64）**（`glibc 2.34`，GCC 10.3.1，CMake 3.22.0，Qt 5.15.2）
 - Ubuntu 24.04 + Qt 5.15.13（g++ 10、g++ 13、clang++ 18；CMake 3.22.6 与 3.28）
 
 ## 许可与素材
