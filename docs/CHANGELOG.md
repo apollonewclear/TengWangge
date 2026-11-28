@@ -30,6 +30,10 @@
 - `cmake --preset release && cmake --build --preset release`：`-Wall -Wextra -Wpedantic -Werror` 零警告通过。
 - `QT_QPA_PLATFORM=offscreen ctest --preset release`：`core_tests` **48/48**、`core_layering`、`ui_tests` **47/47** 全部通过。
 - 实机截图核验 20 工具场景下的工具中心卡片网格、弹性顶栏 `»` 菜单与 `900×560` 最小窗口布局，无溢出无遮挡。
+- **双架构免源码包已刷新**（详见 [docs/DEPLOYMENT.md](DEPLOYMENT.md)）：
+  - `TengWangge-0.1.0-kylin-x86_64.tar.gz`（SHA-256: `150b86092be287facf2dce15ea28805c4a97089b7ece5f22d7d1a00a1c96958d`）
+  - `TengWangge-0.1.0-kylin-x86_64-lite.tar.gz`（SHA-256: `6b28326a001188140ec9646400f12b93ea7ccb50231a150f0c38c4ac30a0d57f`）
+  - `TengWangge-0.1.0-kylin-aarch64.tar.gz`（SHA-256: `e4c668fd5e456f6ddef6798f3a6dd42806b82f21f471fd3dbcfcea56a90673ab`）
 
 ---
 

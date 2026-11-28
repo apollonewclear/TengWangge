@@ -84,10 +84,10 @@ cd TengWangge-0.1.0-kylin-<arch>
 
 ---
 
-## 5. 当前发布记录（v0.1.0，基于 commit `5c7671d`）
+## 5. 当前发布记录（v0.1.0，基于 commit `4887a1d`）
 
 | 产物 | 架构 | SHA-256 | 验证状态 |
 | --- | --- | --- | --- |
-| `TengWangge-0.1.0-kylin-x86_64.tar.gz` | x86_64（全量） | `4637a688c8254f118e73fed8fbf71a57924b3738a5e6aca34cc47ee67c744d92` | KylinSec 3.5 双模式实测通过 |
-| `TengWangge-0.1.0-kylin-x86_64-lite.tar.gz` | x86_64（轻量） | `23788864d81ba265ff51c7c2f2d39f6cf93c73ac662bee3d30383cac5dff7b4f` | KylinSec 3.5 系统 Qt5 实测通过 |
-| `TengWangge-0.1.0-kylin-aarch64.tar.gz` | ARM64（全量） | `ab4b4ecbd90194f3a471123f6a6e685b9b1057a097f718c7d9e6bd441e292008` | openEuler 22.03 ARM64 全量测试 + 无 Qt5 裸容器 0 缺库验证通过 |
+| `TengWangge-0.1.0-kylin-x86_64.tar.gz` | x86_64（全量） | `150b86092be287facf2dce15ea28805c4a97089b7ece5f22d7d1a00a1c96958d` | KylinSec 3.5 双模式实测通过 |
+| `TengWangge-0.1.0-kylin-x86_64-lite.tar.gz` | x86_64（轻量） | `6b28326a001188140ec9646400f12b93ea7ccb50231a150f0c38c4ac30a0d57f` | KylinSec 3.5 系统 Qt5 实测通过 |
+| `TengWangge-0.1.0-kylin-aarch64.tar.gz` | ARM64（全量） | `e4c668fd5e456f6ddef6798f3a6dd42806b82f21f471fd3dbcfcea56a90673ab` | openEuler 22.03 ARM64 全量测试 + 无 Qt5 裸容器 0 缺库验证通过 |
